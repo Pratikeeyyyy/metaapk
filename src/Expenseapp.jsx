@@ -4,6 +4,11 @@ import { ethers } from "ethers";
 import { contractABI } from "./abi";
 
 const CONTRACT_ADDRESS = "0xfa4e88f0a0d7cdfc6472ed91da5672def7fc9b9f";
+const NFT_CONTRACT_ADDRESS = "0xa288221205A674A0619B7e959FfFA4930404E999";
+const SEPOLIA_CHAIN_ID = "0xaa36a7";
+const SEPOLIA_CHAIN_ID_DECIMAL = 11155111;
+const SEPOLIA_RPC_URL =
+  "https://eth-sepolia.g.alchemy.com/v2/J9QE4VrvXKwQSPMkoBtAK";
 
 function Expapp() {
   const [provider, setProvider] = useState(null);
@@ -354,97 +359,94 @@ function Expapp() {
 
   // Add expense
   const addExpense = useCallback(async () => {
-    if (!contract || !isConnected) {
-      alert("Please connect wallet first");
-      return;
-    }
+  if (!contract || !isConnected) {
+    alert("Please connect wallet first");
+    return;
+  }
 
-    if (!expenseName || !paidBy || !person1 || !person2 || !amount) {
-      alert("Please fill all required fields");
-      return;
-    }
+  if (!expenseName || !paidBy || !person1 || !person2 || !amount) {
+    alert("Please fill all required fields");
+    return;
+  }
 
-    if (parseFloat(amount) <= 0) {
-      alert("Amount must be greater than 0");
-      return;
-    }
+  if (parseFloat(amount) <= 0) {
+    alert("Amount must be greater than 0");
+    return;
+  }
 
-    try {
-      setLoading(true);
-      setError("");
+  try {
+    setLoading(true);
+    setError("");
 
-      // Convert amount to Wei
-      const amt = ethers.parseEther(amount);
-      const statusValue = parseInt(status);
+    const amt = ethers.parseEther(amount);
+    const statusValue = parseInt(status);
 
-      console.log("📝 Adding expense on Sepolia:", {
-        expname: expenseName,
-        paidby: paidBy,
-        person1,
-        person2,
-        paddress: location || "Unknown Location",
-        amt: amount,
-        status: statusValue,
-      });
+    console.log("📝 Adding expense:", {
+      description: expenseName,
+      payer: paidBy,
+      payee: person1,
+      participant: person2,
+      place: location || "Unknown",
+      amount: amount,
+      status: statusValue,
+    });
 
-      // Call the addExpense function on the contract
-      const tx = await contract.addExpense(
-        expenseName,
-        paidBy,
-        person1,
-        person2,
-        location || "Unknown Location",
-        amt,
-        statusValue,
-        { value: amt },
-      );
+    // Your contract doesn't send ETH with the transaction
+    const tx = await contract.addExpense(
+      expenseName,        // _description
+      paidBy,            // _payer
+      person1,           // _payee
+      person2,           // _participant
+      location || "Unknown", // _place
+      amt,               // _amount
+      statusValue        // _status
+    );
 
-      console.log("⏳ Waiting for transaction...", tx.hash);
-      await tx.wait();
-      console.log("✅ Transaction confirmed!", tx.hash);
+    console.log("⏳ Waiting for transaction...", tx.hash);
+    await tx.wait();
+    console.log("✅ Transaction confirmed!", tx.hash);
 
-      // Clear form
-      setExpenseName("");
-      setPaidBy("");
-      setPayerAddress("");
-      setPerson1("");
-      setPerson1Address("");
-      setPerson2("");
-      setPerson2Address("");
-      setLocation("");
-      setAmount("");
-      setSplitAmount("0");
-      setStatus("0");
-      setShowBadDebt(false);
-      setBadDebtPerson("");
-      setBadDebtAddress("");
+    // Clear form
+    setExpenseName("");
+    setPaidBy("");
+    setPayerAddress("");
+    setPerson1("");
+    setPerson1Address("");
+    setPerson2("");
+    setPerson2Address("");
+    setLocation("");
+    setAmount("");
+    setSplitAmount("0");
+    setStatus("0");
+    setShowBadDebt(false);
+    setBadDebtPerson("");
+    setBadDebtAddress("");
 
-      // Reload data
-      await loadExpenses(contract);
-      await getContractBalance(provider);
+    await loadExpenses(contract);
+    await getContractBalance(provider);
 
-      alert("✅ Expense Added Successfully!");
-    } catch (error) {
-      console.error("❌ Failed to add expense:", error);
-      setError("Transaction failed: " + (error.reason || error.message));
-      alert("Transaction failed: " + (error.reason || error.message));
-    } finally {
-      setLoading(false);
-    }
-  }, [
-    contract,
-    isConnected,
-    expenseName,
-    paidBy,
-    person1,
-    person2,
-    amount,
-    status,
-    location,
-    provider,
-    loadExpenses,
-    getContractBalance,
-  ]);
+    alert("✅ Expense Added Successfully!");
+  } catch (error) {
+    console.error("❌ Failed to add expense:", error);
+    setError("Transaction failed: " + (error.reason || error.message));
+    alert("Transaction failed: " + (error.reason || error.message));
+  } finally {
+    setLoading(false);
+  }
+}, [
+  contract,
+  isConnected,
+  expenseName,
+  paidBy,
+  person1,
+  person2,
+  amount,
+  status,
+  location,
+  provider,
+  loadExpenses,
+  getContractBalance,
+]);
 
   // Handle status change
   const handleStatusChange = (e) => {
@@ -477,7 +479,6 @@ function Expapp() {
           connectWallet();
         }
       };
-
       const handleChainChanged = () => {
         window.location.reload();
       };
