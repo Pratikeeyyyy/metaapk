@@ -1,9 +1,18 @@
 [profile.default]
-src = "contracts"
+src = "src"
 out = "out"
 libs = ["lib"]
 test = "test"
-solc-version = "0.8.23"
+script = "script"
+solc = "0.8.13"
 
-[profile.ci]
+# Optional: Add remappings
+remappings = [
+    "forge-std/=lib/forge-std/src/"
+]
+
+# Optional: Gas reporting
+gas_reports = ["Storage"]
+
+# Optional: Verbose output
 verbosity = 2
