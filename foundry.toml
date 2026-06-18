@@ -4,15 +4,9 @@ out = "out"
 libs = ["lib"]
 test = "test"
 script = "script"
-solc = "0.8.13"
+solc = "0.8.28"
 
-# Optional: Add remappings
 remappings = [
-    "forge-std/=lib/forge-std/src/"
+    "forge-std/=lib/forge-std/src/",
+    "@openzeppelin/=lib/openzeppelin-contracts/"
 ]
-
-# Optional: Gas reporting
-gas_reports = ["Storage"]
-
-# Optional: Verbose output
-verbosity = 2
