@@ -2,21 +2,23 @@
 pragma solidity ^0.8.13;
 
 contract Storage {
-    // Enum for expense status
+    // Expense status options
     enum Status {
-        pending,
-        paid,
-        rejected
+        pending,   // 0
+        paid,      // 1
+        rejected,  // 2
+        badDebt    // 3
     }
 
-    // Struct for expense
+    // Expense structure
     struct Expense {
-        string description;
-        string payer;
-        string payee;
-        string participant;
-        string place;
-        uint256 amount;
+        string expname;
+        string paidby;
+        string person1;
+        string person2;
+        string paddress;
+        uint256 amt;
+        uint256 shareamount;
         Status status;
     }
 
@@ -24,64 +26,50 @@ contract Storage {
     uint256 public expenseId;
 
     // Events
-    event ExpenseAdded(uint256 indexed id, string description, uint256 amount);
+    event ExpenseAdded(uint256 indexed id, string expname, uint256 amt);
     event StatusUpdated(uint256 indexed id, Status newStatus);
 
-    // Add expense function
+    // Add a new expense
     function addExpense(
-        string memory _description,
-        string memory _payer,
-        string memory _payee,
-        string memory _participant,
-        string memory _place,
-        uint256 _amount,
+        string memory _expname,
+        string memory _paidby,
+        string memory _person1,
+        string memory _person2,
+        string memory _paddress,
+        uint256 _amt,
         Status _status
     ) public {
+        uint256 shareAmount = _amt / 3; // Split equally among 3 people
+        
         Expense memory newExpense = Expense({
-            description: _description,
-            payer: _payer,
-            payee: _payee,
-            participant: _participant,
-            place: _place,
-            amount: _amount,
+            expname: _expname,
+            paidby: _paidby,
+            person1: _person1,
+            person2: _person2,
+            paddress: _paddress,
+            amt: _amt,
+            shareamount: shareAmount,
             status: _status
         });
         
         expenses.push(newExpense);
         expenseId++;
         
-        emit ExpenseAdded(expenseId, _description, _amount);
+        emit ExpenseAdded(expenseId, _expname, _amt);
     }
 
-    // Update expense function
-    function updateexpense(
-        string memory _description,
-        string memory _payer,
-        string memory _payee,
-        string memory _participant,
-        string memory _place,
-        uint256 _amount,
-        Status _status
-    ) public {
-        expenses.push(Expense({
-            description: _description,
-            payer: _payer,
-            payee: _payee,
-            participant: _participant,
-            place: _place,
-            amount: _amount,
-            status: _status
-        }));
+    // Get expense by ID
+    function getExpense(uint256 _id) public view returns (Expense memory) {
+        require(_id < expenses.length, "Expense not found");
+        return expenses[_id];
     }
 
-    // Update status function
-    function updateStatus(Status _newStatus) public {
-        require(expenses.length > 0, "No expenses found");
-        expenses[expenses.length - 1].status = _newStatus;
-        emit StatusUpdated(expenses.length - 1, _newStatus);
+    // Get total expense count
+    function getLength() public view returns (uint256) {
+        return expenses.length;
     }
 
-    // Get status message
+    // Get status message for the latest expense
     function getStatus() public view returns (string memory) {
         require(expenses.length > 0, "No expenses found");
         Status currentStatus = expenses[expenses.length - 1].status;
@@ -92,24 +80,51 @@ contract Storage {
             return "your expense is paid";
         } else if (currentStatus == Status.rejected) {
             return "your expense is rejected";
+        } else if (currentStatus == Status.badDebt) {
+            return "your expense is bad debt";
         }
         return "Unknown status";
     }
 
-    // Get share amount
+    // Get share amount for the latest expense
     function getShareAmount() public view returns (uint256) {
         require(expenses.length > 0, "No expenses found");
-        return expenses[expenses.length - 1].amount;
+        return expenses[expenses.length - 1].shareamount;
     }
 
-    // Get length of expenses
-    function getLength() public view returns (uint256) {
-        return expenses.length;
+    // Update status for the latest expense
+    function updateStatus(Status _newStatus) public {
+        require(expenses.length > 0, "No expenses found");
+        expenses[expenses.length - 1].status = _newStatus;
+        emit StatusUpdated(expenses.length - 1, _newStatus);
     }
 
-    // Get expense by ID
-    function getExpense(uint256 _id) public view returns (Expense memory) {
-        require(_id < expenses.length, "Expense not found");
-        return expenses[_id];
+    // Add a new expense (kept for compatibility)
+    function updateexpense(
+        string memory _expname,
+        string memory _paidby,
+        string memory _person1,
+        string memory _person2,
+        string memory _paddress,
+        uint256 _amt,
+        Status _status
+    ) public {
+        uint256 shareAmount = _amt / 3;
+        expenses.push(Expense({
+            expname: _expname,
+            paidby: _paidby,
+            person1: _person1,
+            person2: _person2,
+            paddress: _paddress,
+            amt: _amt,
+            shareamount: shareAmount,
+            status: _status
+        }));
+    }
+
+    // Delete all expenses
+    function resetexp() public {
+        delete expenses;
+        expenseId = 0;
     }
 }
