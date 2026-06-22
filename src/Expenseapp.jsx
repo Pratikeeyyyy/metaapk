@@ -7,7 +7,6 @@ import { nftABI } from "./nftABI";
 // Main Storage Contract
 const CONTRACT_ADDRESS = "0x59698cC3f177CCa3c5b95A7dac71A5B3e51B6Bec";
 
-// NFT Contract (already deployed)
 const NFT_CONTRACT_ADDRESS = "0xB6dCcFE0c246c3B101EDaEe5e1116c6bAEA9d120";
 const SEPOLIA_CHAIN_ID = "0xaa36a7";
 
