@@ -3,10 +3,12 @@ import React, { useState, useEffect, useCallback } from "react";
 import { ethers } from "ethers";
 import { contractABI } from "./abi";
 import { nftABI } from "./nftABI";
+import { PinataSDK } from "pinata-web3";
+
 // Anvil Addresses
 const CONTRACT_ADDRESS = "0x5FbDB2315678afecb367f032d93F642f64180aa3";
 const NFT_CONTRACT_ADDRESS = "0xe7f1725E7734CE288F8367e1Bb143E90bb3F0512";
-// Main Storage Contract
+// Main Storage Contract Sepholia
 // const CONTRACT_ADDRESS = "0x59698cC3f177CCa3c5b95A7dac71A5B3e51B6Bec";
 // const NFT_CONTRACT_ADDRESS = "0xB6dCcFE0c246c3B101EDaEe5e1116c6bAEA9d120";
 // const SEPOLIA_CHAIN_ID = "0xaa36a7";
@@ -50,7 +52,7 @@ function App() {
   const [dataLoaded, setDataLoaded] = useState(false);
   const [error, setError] = useState("");
   const [debugInfo, setDebugInfo] = useState("");
-
+  const [uploading, setUploading] = useState(false);
   // NFT states
   const [userNFTs, setUserNFTs] = useState([]);
   const [nftContract, setNftContract] = useState(null);
@@ -280,7 +282,7 @@ function App() {
     }
   }, [userNFTs]);
 
-  // Mint NFT for an expense
+  // Mint NFT for an expense with Pinata IPFS
   const mintExpenseNFT = useCallback(async () => {
     if (!nftContract || !isConnected) {
       alert("Please connect wallet first");
@@ -294,6 +296,7 @@ function App() {
 
     try {
       setMintingNFT(true);
+      setUploading(true); // ← ADD THIS
 
       const expense = expenses.find(
         (e) => e.id === parseInt(selectedExpenseForNFT),
@@ -303,20 +306,53 @@ function App() {
         return;
       }
 
-      // Create metadata (using placeholder for now)
-      const tokenURI = "https://ipfs.io/ipfs/QmPlaceholder/";
+      let imageUrl =
+        "https://via.placeholder.com/400x400/6C63FF/FFFFFF?text=Expense+NFT";
+      if (nftImageFile) {
+        try {
+          imageUrl = await uploadToPinata(nftImageFile);
+          console.log("✅ Image uploaded to IPFS:", imageUrl);
+        } catch (uploadError) {
+          console.error("Image upload failed:", uploadError);
+        }
+      }
 
-      // Mint NFT
+      const metadata = {
+        name: `Expense: ${expense.expname}`,
+        description: `${expense.paidby} paid ${expense.amt.toFixed(4)} ETH for ${expense.expname}. Shared with ${expense.person1} and ${expense.person2}.`,
+        image: imageUrl,
+        attributes: [
+          { trait_type: "Expense Name", value: expense.expname },
+          { trait_type: "Amount", value: `${expense.amt.toFixed(4)} ETH` },
+          { trait_type: "Paid By", value: expense.paidby },
+          { trait_type: "Person 1", value: expense.person1 },
+          { trait_type: "Person 2", value: expense.person2 },
+          { trait_type: "Location", value: expense.paddress || "Unknown" },
+          { trait_type: "Date", value: new Date().toLocaleDateString() },
+        ],
+      };
+
+      let metadataUrl;
+      try {
+        metadataUrl = await uploadMetadataToPinata(metadata);
+        console.log("✅ Metadata uploaded to IPFS:", metadataUrl);
+      } catch (uploadError) {
+        console.error("Metadata upload failed:", uploadError);
+        metadataUrl = "https://ipfs.io/ipfs/QmPlaceholder/";
+      }
+
+      setUploading(false); // ← ADD THIS
+
       const tx = await nftContract.mintExpenseNFT(
         walletAddress,
-        tokenURI,
+        metadataUrl,
         expense.id,
         expense.expname,
       );
 
       await tx.wait();
 
-      alert("✅ NFT Minted Successfully!");
+      alert("✅ NFT Minted Successfully! Image stored on IPFS via Pinata!");
 
       setSelectedExpenseForNFT("");
       setNftImage(null);
@@ -328,6 +364,7 @@ function App() {
       alert("Failed to mint NFT: " + (error.reason || error.message));
     } finally {
       setMintingNFT(false);
+      setUploading(false); // ← ADD THIS
     }
   }, [
     nftContract,
@@ -335,6 +372,7 @@ function App() {
     walletAddress,
     selectedExpenseForNFT,
     expenses,
+    nftImageFile,
     loadUserNFTs,
   ]);
 
@@ -643,6 +681,37 @@ function App() {
     nftContract,
     loadUserNFTs,
   ]);
+
+  const pinata = new PinataSDK({
+    pinataJwt:
+      "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJ1c2VySW5mb3JtYXRpb24iOnsiaWQiOiI2OTE1YmU5ZC0wM2Y0LTQzMGEtYWEwYi00ZTU2MjhmOWIwMDUiLCJlbWFpbCI6InByYXRpa3Bhbmdlbmk3MjgzNDQ0MjU5QGdtYWlsLmNvbSIsImVtYWlsX3ZlcmlmaWVkIjp0cnVlLCJwaW5fcG9saWN5Ijp7InJlZ2lvbnMiOlt7ImRlc2lyZWRSZXBsaWNhdGlvbkNvdW50IjoxLCJpZCI6IkZSQTEifSx7ImRlc2lyZWRSZXBsaWNhdGlvbkNvdW50IjoxLCJpZCI6Ik5ZQzEifV0sInZlcnNpb24iOjF9LCJtZmFfZW5hYmxlZCI6ZmFsc2UsInN0YXR1cyI6IkFDVElWRSJ9LCJhdXRoZW50aWNhdGlvblR5cGUiOiJzY29wZWRLZXkiLCJzY29wZWRLZXlLZXkiOiJlZDFjODA2ZDIyOWRmODg0ZmQ4MyIsInNjb3BlZEtleVNlY3JldCI6IjRhZGIyM2NhMDdjOWI4Yzc4YjRmZmQ0Y2I4Mzg0MDVmMzY4ZGE5NDQzNGU0MTA2MzNjOWE0OWJiM2Y5ZjA1YmQiLCJleHAiOjE4MTM3MzcwNjZ9.CeZeE1nnUym7PJu_99lV2JQLpYqtkvwRna5_CkwOtgU",
+    pinataGateway: "gateway.pinata.cloud",
+  });
+  // Upload file to IPFS
+  async function uploadToPinata(file) {
+    try {
+      const result = await pinata.upload.file(file);
+      const url = `https://gateway.pinata.cloud/ipfs/${result.IpfsHash}`;
+      console.log("✅ File uploaded to IPFS:", url);
+      return url;
+    } catch (error) {
+      console.error("❌ Upload failed:", error);
+      throw error;
+    }
+  }
+
+  // Upload JSON metadata to IPFS
+  async function uploadMetadataToPinata(metadata) {
+    try {
+      const result = await pinata.upload.json(metadata);
+      const url = `https://gateway.pinata.cloud/ipfs/${result.IpfsHash}`;
+      console.log("✅ Metadata uploaded to IPFS:", url);
+      return url;
+    } catch (error) {
+      console.error("❌ Metadata upload failed:", error);
+      throw error;
+    }
+  }
 
   return (
     <div className="min-h-screen bg-gradient-to-br from-slate-100 to-slate-200 p-6">
@@ -1185,12 +1254,14 @@ function App() {
                   onClick={mintExpenseNFT}
                   disabled={
                     mintingNFT ||
+                    uploading ||
                     !selectedExpenseForNFT ||
                     !isConnected ||
                     !isCorrectNetwork
                   }
                   className={`w-full py-3 rounded-xl flex items-center justify-center gap-2 ${
                     mintingNFT ||
+                    uploading ||
                     !selectedExpenseForNFT ||
                     !isConnected ||
                     !isCorrectNetwork
@@ -1198,7 +1269,12 @@ function App() {
                       : "bg-gradient-to-r from-purple-500 to-pink-500 hover:from-purple-600 hover:to-pink-600"
                   } text-white font-semibold`}
                 >
-                  {mintingNFT ? (
+                  {uploading ? (
+                    <>
+                      <i className="fas fa-cloud-upload-alt fa-spin"></i>
+                      Uploading to IPFS...
+                    </>
+                  ) : mintingNFT ? (
                     <>
                       <i className="fas fa-spinner fa-spin"></i>
                       Minting...
