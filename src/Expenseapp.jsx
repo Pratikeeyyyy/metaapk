@@ -5,6 +5,8 @@ import { contractABI } from "./abi";
 import { nftABI } from "./nftABI";
 import { PinataSDK } from "pinata-web3";
 
+import * as PushAPI from "@pushprotocol/restapi";
+import { CONSTANTS } from "@pushprotocol/restapi";
 // Anvil Addresses
 const CONTRACT_ADDRESS = "0x5FbDB2315678afecb367f032d93F642f64180aa3";
 const NFT_CONTRACT_ADDRESS = "0xe7f1725E7734CE288F8367e1Bb143E90bb3F0512";
@@ -23,6 +25,11 @@ function App() {
   const [networkError, setNetworkError] = useState("");
   const [isLoading, setIsLoading] = useState(false);
   const [isCorrectNetwork, setIsCorrectNetwork] = useState(false);
+
+  // Notification states
+  const [pushUser, setPushUser] = useState(null);
+  const [notifications, setNotifications] = useState([]);
+  const [notificationLoading, setNotificationLoading] = useState(false);
 
   // Form inputs
   const [expenseName, setExpenseName] = useState("");
@@ -161,6 +168,8 @@ function App() {
       setWalletAddress(address);
       setIsConnected(true);
 
+      await initPushProtocol(signerInstance);
+
       // Initialize NFT contract
       const nftContractInstance = new ethers.Contract(
         NFT_CONTRACT_ADDRESS,
@@ -182,7 +191,51 @@ function App() {
       setError("Failed to connect wallet: " + error.message);
       setIsLoading(false);
     }
-  }, [initEthers]);
+  }, [initEthers, initPushProtocol]);
+  // Initialize Push Protocol
+  const initPushProtocol = useCallback(async (signerInstance) => {
+    try {
+      const user = await PushAPI.initialize(signerInstance, {
+        env: CONSTANTS.ENV.STAGING, // Use PROD for mainnet
+      });
+      setPushUser(user);
+      console.log("✅ Push Protocol initialized");
+      return user;
+    } catch (error) {
+      console.error("❌ Failed to initialize Push Protocol:", error);
+      return null;
+    }
+  }, []);
+  // Send Push notification
+  const sendPushNotification = useCallback(
+    async (recipient, title, body, cta = "https://yourapp.com/expenses") => {
+      if (!pushUser) {
+        console.log("⚠️ Push Protocol not initialized");
+        return;
+      }
+
+      try {
+        const notification = await pushUser.channel.send([
+          {
+            recipient: `eip155:11155111:${recipient}`,
+            payload: {
+              title: title,
+              body: body,
+              cta: cta,
+              img: "https://your-app-logo.png",
+            },
+          },
+        ]);
+
+        console.log("✅ Push notification sent:", notification);
+        return notification;
+      } catch (error) {
+        console.error("❌ Failed to send push notification:", error);
+        return null;
+      }
+    },
+    [pushUser],
+  );
 
   // Disconnect wallet
   const disconnectWallet = useCallback(() => {
@@ -536,6 +589,39 @@ function App() {
 
       await tx.wait();
 
+      // --- SEND NOTIFICATIONS ---
+      const shareAmountEth = (parseFloat(amount) / 3).toFixed(4);
+
+      // Notify Person 1
+      if (person1Address) {
+        await sendPushNotification(
+          person1Address,
+          `💰 New Expense: ${expenseName}`,
+          `${paidBy} paid ${amount} ETH. You owe ${shareAmountEth} ETH`,
+        );
+        console.log(`📨 Notification sent to ${person1}`);
+      }
+
+      // Notify Person 2
+      if (person2Address) {
+        await sendPushNotification(
+          person2Address,
+          `💰 New Expense: ${expenseName}`,
+          `${paidBy} paid ${amount} ETH. You owe ${shareAmountEth} ETH`,
+        );
+        console.log(`📨 Notification sent to ${person2}`);
+      }
+
+      // Notify Payer
+      if (payerAddress) {
+        await sendPushNotification(
+          payerAddress,
+          `✅ Expense Added: ${expenseName}`,
+          `You paid ${amount} ETH. ${person1} & ${person2} owe ${shareAmountEth} ETH each`,
+        );
+        console.log(`📨 Notification sent to ${paidBy}`);
+      }
+      // --- END NOTIFICATIONS ---
       // Clear form after successful submission
       setExpenseName("");
       setPaidBy("");
@@ -582,6 +668,9 @@ function App() {
     getContractBalance,
     nftContract,
     loadUserNFTs,
+    sendPushNotification,
+    person2Address,
+    payerAddress,
   ]);
 
   // Handle status dropdown change
@@ -764,6 +853,19 @@ function App() {
                   </button>
                 )}
               </div>
+            </div>
+          )}
+          {/* Notification Status */}
+          {isConnected && pushUser && (
+            <div className="mb-4 p-2 bg-green-50 border border-green-200 rounded-lg text-sm flex items-center gap-2">
+              <span className="w-2 h-2 bg-green-500 rounded-full animate-pulse"></span>
+              <span className="text-green-700">
+                <i className="fas fa-bell mr-1"></i>
+                Notifications enabled!
+                <span className="text-xs text-green-500 ml-1">
+                  • Participants will be notified
+                </span>
+              </span>
             </div>
           )}
 
@@ -1395,7 +1497,24 @@ function App() {
                 )}
               </div>
             </div>
-
+            {/* Push Notifications Section */}
+            <div className="bg-gradient-to-r from-blue-500 to-cyan-500 rounded-2xl shadow-xl p-6 text-white">
+              <h3 className="text-lg font-bold flex items-center gap-2">
+                <i className="fas fa-bell"></i> Push Notifications
+              </h3>
+              <p className="text-sm opacity-90 mt-2">
+                {pushUser
+                  ? "✅ Notifications are active! You'll be notified when expenses are added."
+                  : "⚠️ Connect wallet to enable notifications"}
+              </p>
+              {pushUser && (
+                <div className="mt-2 text-xs opacity-75">
+                  <i className="fas fa-info-circle mr-1"></i>
+                  When you add an expense, participants will receive a
+                  notification
+                </div>
+              )}
+            </div>
             {/* How it works */}
             <div className="bg-blue-50 rounded-2xl p-4 border border-blue-200">
               <h4 className="font-bold text-blue-800 mb-2 flex items-center gap-2">
