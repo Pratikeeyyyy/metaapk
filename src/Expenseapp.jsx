@@ -1,19 +1,25 @@
-// Main Expense Sharing App - FINAL WORKING VERSION
+// Main Expense Sharing App - NFT.Storage Version
 import React, { useState, useEffect, useCallback } from "react";
 import { ethers } from "ethers";
 import { contractABI } from "./abi";
 import { nftABI } from "./nftABI";
-import { PinataSDK } from "pinata-web3";
+import { NFTStorage, Blob } from "nft.storage";
 import "globalthis/auto";
 
-// ========== CONTRACT ADDRESSES ==========
-// Sepolia Addresses
+// ===== CONTRACT ADDRESSES =====
 const CONTRACT_ADDRESS = "0xC827aDF24F31170d44a3A7eE120fDbC2BbeCD396";
 const NFT_CONTRACT_ADDRESS = "0xB6dCcFE0c246c3B101EDaEe5e1116c6bAEA9d120";
 const SEPOLIA_CHAIN_ID = "0xaa36a7";
 
+// ===== NFT.STORAGE CLIENT =====
+const NFT_STORAGE_TOKEN = "f388e6ee.c3483e6c24f04144be244fc85f6a17d2";
+const nftStorage = new NFTStorage({ token: NFT_STORAGE_TOKEN });
+
+// ===== PLACEHOLDER IMAGE (fallback) =====
+const PLACEHOLDER_IMAGE = "data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='400' height='400' viewBox='0 0 400 400'%3E%3Crect width='400' height='400' fill='%236C63FF'/%3E%3Ctext x='50%25' y='50%25' font-size='24' fill='white' text-anchor='middle' dominant-baseline='central'%3E💰 Expense NFT%3C/text%3E%3C/svg%3E";
+
 function App() {
-  // ========== STATES ==========
+  // ===== WALLET STATES =====
   const [provider, setProvider] = useState(null);
   const [signer, setSigner] = useState(null);
   const [contract, setContract] = useState(null);
@@ -23,7 +29,7 @@ function App() {
   const [isLoading, setIsLoading] = useState(false);
   const [isCorrectNetwork, setIsCorrectNetwork] = useState(false);
 
-  // Payment Request states
+  // ===== PAYMENT REQUEST STATES =====
   const [requestRecipient, setRequestRecipient] = useState("");
   const [requestAmount, setRequestAmount] = useState("");
   const [requestReason, setRequestReason] = useState("");
@@ -32,7 +38,7 @@ function App() {
   const [showRequests, setShowRequests] = useState(false);
   const [requestLoading, setRequestLoading] = useState(false);
 
-  // Form inputs
+  // ===== FORM STATES =====
   const [expenseName, setExpenseName] = useState("");
   const [paidBy, setPaidBy] = useState("");
   const [payerAddress, setPayerAddress] = useState("");
@@ -46,7 +52,7 @@ function App() {
   const [badDebtPerson, setBadDebtPerson] = useState("");
   const [badDebtAddress, setBadDebtAddress] = useState("");
 
-  // App states
+  // ===== APP STATES =====
   const [expenses, setExpenses] = useState([]);
   const [contractBalance, setContractBalance] = useState("0");
   const [totalExpenses, setTotalExpenses] = useState(0);
@@ -62,7 +68,7 @@ function App() {
   const [debugInfo, setDebugInfo] = useState("");
   const [uploading, setUploading] = useState(false);
 
-  // NFT states
+  // ===== NFT STATES =====
   const [userNFTs, setUserNFTs] = useState([]);
   const [nftContract, setNftContract] = useState(null);
   const [nftImage, setNftImage] = useState(null);
@@ -70,7 +76,7 @@ function App() {
   const [selectedExpenseForNFT, setSelectedExpenseForNFT] = useState("");
   const [mintingNFT, setMintingNFT] = useState(false);
 
-  // ========== SWITCH TO SEPOLIA ==========
+  // ===== SWITCH TO SEPOLIA =====
   const switchToSepolia = async () => {
     try {
       await window.ethereum.request({
@@ -104,13 +110,11 @@ function App() {
     }
   };
 
-  // ========== INIT ETHERS ==========
+  // ===== INIT ETHERS =====
   const initEthers = useCallback(async () => {
     if (window.ethereum) {
       try {
-        const providerInstance = new ethers.providers.Web3Provider(
-          window.ethereum,
-        );
+        const providerInstance = new ethers.providers.Web3Provider(window.ethereum);
         setProvider(providerInstance);
         setNetworkError("");
         return providerInstance;
@@ -125,7 +129,34 @@ function App() {
     }
   }, []);
 
-  // ========== LOAD USER NFTs - FIXED ==========
+  // ===== NFT.STORAGE UPLOAD FUNCTIONS =====
+  const uploadToNFTStorage = useCallback(async (file) => {
+    try {
+      const cid = await nftStorage.storeBlob(file);
+      const url = `https://${cid}.ipfs.nftstorage.link/${file.name}`;
+      console.log("✅ File uploaded to NFT.Storage:", url);
+      return url;
+    } catch (error) {
+      console.error("❌ Upload to NFT.Storage failed:", error);
+      throw error;
+    }
+  }, []);
+
+  const uploadMetadataToNFTStorage = useCallback(async (metadata) => {
+    try {
+      const metadataBlob = new Blob([JSON.stringify(metadata)], { type: 'application/json' });
+      const metadataFile = new File([metadataBlob], 'metadata.json');
+      const cid = await nftStorage.storeBlob(metadataFile);
+      const url = `https://${cid}.ipfs.nftstorage.link/metadata.json`;
+      console.log("✅ Metadata uploaded to NFT.Storage:", url);
+      return url;
+    } catch (error) {
+      console.error("❌ Metadata upload failed:", error);
+      throw error;
+    }
+  }, []);
+
+  // ===== LOAD USER NFTs (FIXED) =====
   const loadUserNFTs = useCallback(
     async (nftContractInstance) => {
       if (!nftContractInstance || !walletAddress) return;
@@ -139,34 +170,46 @@ function App() {
             const tokenId = tokenIds[i];
             const tokenURI = await nftContractInstance.tokenURI(tokenId);
 
-            // Skip placeholder URIs
-            if (tokenURI.includes("QmPlaceholder")) {
+            // Skip placeholders
+            if (tokenURI.includes("QmPlaceholder") || 
+                tokenURI.includes("via.placeholder") || 
+                tokenURI.includes("data:image")) {
               nfts.push({
                 tokenId: tokenId.toString(),
-                image:
-                  "https://via.placeholder.com/400x400/6C63FF/FFFFFF?text=Expense+NFT",
+                image: PLACEHOLDER_IMAGE,
                 metadata: { name: "Expense NFT" },
               });
               continue;
             }
 
-            const response = await fetch(tokenURI);
-            const metadata = await response.json();
+            // Try to fetch metadata
+            let metadata = { name: "Expense NFT" };
+            let image = PLACEHOLDER_IMAGE;
+            try {
+              const response = await fetch(tokenURI);
+              if (response.ok) {
+                metadata = await response.json();
+                image = metadata.image || PLACEHOLDER_IMAGE;
+              } else {
+                console.log(`⚠️ Failed to fetch metadata for token ${tokenId}, using placeholder`);
+                image = PLACEHOLDER_IMAGE;
+              }
+            } catch (err) {
+              console.log(`⚠️ Error fetching metadata for token ${tokenId}, using placeholder`);
+              image = PLACEHOLDER_IMAGE;
+            }
 
             nfts.push({
               tokenId: tokenId.toString(),
               tokenURI,
               metadata,
-              image:
-                metadata.image ||
-                "https://via.placeholder.com/400x400/6C63FF/FFFFFF?text=Expense+NFT",
+              image: image,
             });
           } catch (err) {
             console.error("Error loading NFT:", err);
             nfts.push({
               tokenId: tokenIds[i].toString(),
-              image:
-                "https://via.placeholder.com/400x400/6C63FF/FFFFFF?text=Expense+NFT",
+              image: PLACEHOLDER_IMAGE,
               metadata: { name: "Expense NFT" },
             });
           }
@@ -178,10 +221,10 @@ function App() {
         setUserNFTs([]);
       }
     },
-    [walletAddress],
+    [walletAddress]
   );
 
-  // ========== LOAD EXPENSES ==========
+  // ===== LOAD EXPENSES =====
   const loadExpenses = useCallback(async (contractInstance) => {
     if (!contractInstance) return;
 
@@ -240,9 +283,7 @@ function App() {
             });
           }
 
-          const shareAmountEth = parseFloat(
-            ethers.utils.formatEther(exp.shareamount || 0),
-          );
+          const shareAmountEth = parseFloat(ethers.utils.formatEther(exp.shareamount || 0));
 
           expenseList.push({
             id: i,
@@ -278,13 +319,12 @@ function App() {
     }
   }, []);
 
-  // ========== LOAD PAYMENT REQUESTS - SKIP IF NOT SUPPORTED ==========
+  // ===== LOAD PAYMENT REQUESTS =====
   const loadPaymentRequests = useCallback(
     async (contractInstance) => {
       if (!contractInstance) return;
 
       try {
-        // Check if contract supports payment requests
         if (typeof contractInstance.getPaymentRequestCount !== "function") {
           console.log("ℹ️ Payment requests not supported by this contract");
           setAllRequests([]);
@@ -306,9 +346,7 @@ function App() {
               amount: amountEth,
               reason: req.reason,
               isPaid: req.isPaid,
-              timestamp: new Date(
-                Number(req.timestamp) * 1000,
-              ).toLocaleString(),
+              timestamp: new Date(Number(req.timestamp) * 1000).toLocaleString(),
             });
           } catch (err) {
             console.error(`Error loading request ${i}:`, err);
@@ -318,21 +356,16 @@ function App() {
         setAllRequests(requests);
 
         if (walletAddress) {
-          const pending =
-            await contractInstance.getPendingRequests(walletAddress);
+          const pending = await contractInstance.getPendingRequests(walletAddress);
           const pendingList = [];
           for (let i = 0; i < pending.length; i++) {
-            const amountEth = parseFloat(
-              ethers.utils.formatEther(pending[i].amount),
-            );
+            const amountEth = parseFloat(ethers.utils.formatEther(pending[i].amount));
             pendingList.push({
               from: pending[i].from,
               amount: amountEth,
               reason: pending[i].reason,
               isPaid: pending[i].isPaid,
-              timestamp: new Date(
-                Number(pending[i].timestamp) * 1000,
-              ).toLocaleString(),
+              timestamp: new Date(Number(pending[i].timestamp) * 1000).toLocaleString(),
             });
           }
           setPendingRequests(pendingList);
@@ -340,16 +373,15 @@ function App() {
 
         console.log(`✅ Loaded ${requests.length} payment requests`);
       } catch (error) {
-        // Silently fail - contract just doesn't support payment requests
         console.log("ℹ️ Payment requests not available");
         setAllRequests([]);
         setPendingRequests([]);
       }
     },
-    [walletAddress],
+    [walletAddress]
   );
 
-  // ========== CONNECT WALLET ==========
+  // ===== CONNECT WALLET =====
   const connectWallet = useCallback(async () => {
     try {
       if (!window.ethereum) {
@@ -388,7 +420,7 @@ function App() {
       const contractInstance = new ethers.Contract(
         checksumAddress,
         contractABI,
-        signerInstance,
+        signerInstance
       );
 
       setSigner(signerInstance);
@@ -396,19 +428,16 @@ function App() {
       setWalletAddress(address);
       setIsConnected(true);
 
-      // Initialize NFT contract
       const nftContractInstance = new ethers.Contract(
         NFT_CONTRACT_ADDRESS,
         nftABI,
-        signerInstance,
+        signerInstance
       );
       setNftContract(nftContractInstance);
       await loadUserNFTs(nftContractInstance);
 
       const balance = await providerInstance.getBalance(CONTRACT_ADDRESS);
-      const ethBalance = parseFloat(ethers.utils.formatEther(balance)).toFixed(
-        4,
-      );
+      const ethBalance = parseFloat(ethers.utils.formatEther(balance)).toFixed(4);
       setDebugInfo((prev) => prev + ` | Balance: ${ethBalance} ETH`);
 
       await loadExpenses(contractInstance);
@@ -421,9 +450,9 @@ function App() {
       setError("Failed to connect wallet: " + error.message);
       setIsLoading(false);
     }
-  }, [initEthers, loadPaymentRequests]);
+  }, [initEthers, loadPaymentRequests, loadUserNFTs]);
 
-  // ========== DISCONNECT WALLET ==========
+  // ===== DISCONNECT WALLET =====
   const disconnectWallet = useCallback(() => {
     setProvider(null);
     setSigner(null);
@@ -447,7 +476,7 @@ function App() {
     setSelectedExpenseForNFT("");
   }, []);
 
-  // ========== IMPORT NFT TO METAMASK ==========
+  // ===== IMPORT NFT TO METAMASK =====
   const importNFTToMetaMask = useCallback(async () => {
     if (!window.ethereum) {
       alert("Please install MetaMask");
@@ -484,7 +513,7 @@ function App() {
     }
   }, [userNFTs]);
 
-  // ========== MINT NFT ==========
+  // ===== MINT NFT =====
   const mintExpenseNFT = useCallback(async () => {
     if (!nftContract || !isConnected) {
       alert("Please connect wallet first");
@@ -500,22 +529,20 @@ function App() {
       setMintingNFT(true);
       setUploading(true);
 
-      const expense = expenses.find(
-        (e) => e.id === parseInt(selectedExpenseForNFT),
-      );
+      const expense = expenses.find((e) => e.id === parseInt(selectedExpenseForNFT));
       if (!expense) {
         alert("Expense not found");
         return;
       }
 
-      let imageUrl =
-        "https://via.placeholder.com/400x400/6C63FF/FFFFFF?text=Expense+NFT";
+      let imageUrl = PLACEHOLDER_IMAGE;
       if (nftImageFile) {
         try {
-          imageUrl = await uploadToPinata(nftImageFile);
-          console.log("✅ Image uploaded to IPFS:", imageUrl);
+          imageUrl = await uploadToNFTStorage(nftImageFile);
+          console.log("✅ Image uploaded to NFT.Storage:", imageUrl);
         } catch (uploadError) {
           console.error("Image upload failed:", uploadError);
+          // Continue with placeholder
         }
       }
 
@@ -534,14 +561,13 @@ function App() {
         ],
       };
 
-      let metadataUrl;
+      let metadataUrl = PLACEHOLDER_IMAGE;
       try {
-        metadataUrl = await uploadMetadataToPinata(metadata);
-        console.log("✅ Metadata uploaded to IPFS:", metadataUrl);
+        metadataUrl = await uploadMetadataToNFTStorage(metadata);
+        console.log("✅ Metadata uploaded to NFT.Storage:", metadataUrl);
       } catch (uploadError) {
         console.error("Metadata upload failed:", uploadError);
-        metadataUrl =
-          "https://via.placeholder.com/400x400/6C63FF/FFFFFF?text=Expense+NFT";
+        // Continue with placeholder
       }
 
       setUploading(false);
@@ -550,12 +576,12 @@ function App() {
         walletAddress,
         metadataUrl,
         expense.id,
-        expense.expname,
+        expense.expname
       );
 
       await tx.wait();
 
-      alert("✅ NFT Minted Successfully! Image stored on IPFS via Pinata!");
+      alert("✅ NFT Minted Successfully!");
 
       setSelectedExpenseForNFT("");
       setNftImage(null);
@@ -577,23 +603,23 @@ function App() {
     expenses,
     nftImageFile,
     loadUserNFTs,
+    uploadToNFTStorage,
+    uploadMetadataToNFTStorage,
   ]);
 
-  // ========== GET CONTRACT BALANCE ==========
+  // ===== GET CONTRACT BALANCE =====
   const getContractBalance = useCallback(async (providerInstance) => {
     if (!providerInstance) return;
     try {
       const balance = await providerInstance.getBalance(CONTRACT_ADDRESS);
-      const ethBalance = parseFloat(ethers.utils.formatEther(balance)).toFixed(
-        4,
-      );
+      const ethBalance = parseFloat(ethers.utils.formatEther(balance)).toFixed(4);
       setContractBalance(ethBalance);
     } catch (error) {
       console.error("Failed to get contract balance:", error);
     }
   }, []);
 
-  // ========== UPDATE SPLIT AMOUNT ==========
+  // ===== UPDATE SPLIT AMOUNT =====
   const updateSplitAmount = useCallback((value) => {
     const amt = parseFloat(value) || 0;
     const split = (amt / 3).toFixed(4);
@@ -607,7 +633,7 @@ function App() {
     updateSplitAmount(value);
   };
 
-  // ========== ADD EXPENSE ==========
+  // ===== ADD EXPENSE =====
   const addExpense = useCallback(async () => {
     if (!contract || !isConnected) {
       alert("Please connect wallet first");
@@ -638,7 +664,7 @@ function App() {
         person2,
         location || "Unknown",
         amt,
-        statusValue,
+        statusValue
       );
 
       await tx.wait();
@@ -693,7 +719,7 @@ function App() {
     loadUserNFTs,
   ]);
 
-  // ========== HANDLE STATUS CHANGE ==========
+  // ===== HANDLE STATUS CHANGE =====
   const handleStatusChange = (e) => {
     const value = e.target.value;
     setStatus(value);
@@ -704,14 +730,73 @@ function App() {
     }
   };
 
-  // ========== FORMAT ADDRESS ==========
+  // ===== FORMAT ADDRESS =====
   const formatAddress = (address) => {
     if (!address) return "";
     if (address.length <= 10) return address;
     return `${address.slice(0, 6)}...${address.slice(-4)}`;
   };
 
-  // ========== USE EFFECTS ==========
+  // ===== HANDLE REQUEST PAYMENT =====
+  const handleRequestPayment = useCallback(async () => {
+    if (!contract || !isConnected) {
+      alert("Please connect wallet");
+      return;
+    }
+
+    if (!requestRecipient || !requestAmount || !requestReason) {
+      alert("Please fill all fields");
+      return;
+    }
+
+    try {
+      setRequestLoading(true);
+      const amt = ethers.utils.parseEther(requestAmount);
+
+      const tx = await contract.requestPayment(requestRecipient, amt, requestReason);
+      await tx.wait();
+
+      await loadPaymentRequests(contract);
+
+      setRequestRecipient("");
+      setRequestAmount("");
+      setRequestReason("");
+
+      alert("✅ Payment request sent!");
+    } catch (error) {
+      console.error("❌ Failed to request payment:", error);
+      alert("Failed to request payment: " + (error.reason || error.message));
+    } finally {
+      setRequestLoading(false);
+    }
+  }, [contract, isConnected, requestRecipient, requestAmount, requestReason, loadPaymentRequests]);
+
+  // ===== PAY REQUEST =====
+  const payRequest = useCallback(async (requestId, amount) => {
+    if (!contract || !isConnected) {
+      alert("Please connect wallet");
+      return;
+    }
+
+    try {
+      setLoading(true);
+      const amt = ethers.utils.parseEther(amount.toString());
+
+      const tx = await contract.payRequest(requestId, { value: amt });
+      await tx.wait();
+
+      await loadPaymentRequests(contract);
+
+      alert("✅ Payment sent successfully!");
+    } catch (error) {
+      console.error("❌ Failed to pay:", error);
+      alert("Failed to pay: " + (error.reason || error.message));
+    } finally {
+      setLoading(false);
+    }
+  }, [contract, isConnected, loadPaymentRequests]);
+
+  // ===== USE EFFECTS =====
   useEffect(() => {
     initEthers();
 
@@ -732,10 +817,7 @@ function App() {
 
       return () => {
         if (window.ethereum) {
-          window.ethereum.removeListener(
-            "accountsChanged",
-            handleAccountsChanged,
-          );
+          window.ethereum.removeListener("accountsChanged", handleAccountsChanged);
           window.ethereum.removeListener("chainChanged", handleChainChanged);
         }
       };
@@ -788,37 +870,6 @@ function App() {
     nftContract,
     loadUserNFTs,
   ]);
-
-  // ========== PINATA SETUP ==========
-  const pinata = new PinataSDK({
-    pinataJwt:
-      "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJ1c2VySW5mb3JtYXRpb24iOnsiaWQiOiI2OTE1YmU5ZC0wM2Y0LTQzMGEtYWEwYi00ZTU2MjhmOWIwMDUiLCJlbWFpbCI6InByYXRpa3Bhbmdlbmk3MjgzNDQ0MjU5QGdtYWlsLmNvbSIsImVtYWlsX3ZlcmlmaWVkIjp0cnVlLCJwaW5fcG9saWN5Ijp7InJlZ2lvbnMiOlt7ImRlc2lyZWRSZXBsaWNhdGlvbkNvdW50IjoxLCJpZCI6IkZSQTEifSx7ImRlc2lyZWRSZXBsaWNhdGlvbkNvdW50IjoxLCJpZCI6Ik5ZQzEifV0sInZlcnNpb24iOjF9LCJtZmFfZW5hYmxlZCI6ZmFsc2UsInN0YXR1cyI6IkFDVElWRSJ9LCJhdXRoZW50aWNhdGlvblR5cGUiOiJzY29wZWRLZXkiLCJzY29wZWRLZXlLZXkiOiJlZDFjODA2ZDIyOWRmODg0ZmQ4MyIsInNjb3BlZEtleVNlY3JldCI6IjRhZGIyM2NhMDdjOWI4Yzc4YjRmZmQ0Y2I4Mzg0MDVmMzY4ZGE5NDQzNGU0MTA2MzNjOWE0OWJiM2Y5ZjA1YmQiLCJleHAiOjE4MTM3MzcwNjZ9.CeZeE1nnUym7PJu_99lV2JQLpYqtkvwRna5_CkwOtgU",
-    pinataGateway: "gateway.pinata.cloud",
-  });
-
-  async function uploadToPinata(file) {
-    try {
-      const result = await pinata.upload.file(file);
-      const url = `https://gateway.pinata.cloud/ipfs/${result.IpfsHash}`;
-      console.log("✅ File uploaded to IPFS:", url);
-      return url;
-    } catch (error) {
-      console.error("❌ Upload failed:", error);
-      throw error;
-    }
-  }
-
-  async function uploadMetadataToPinata(metadata) {
-    try {
-      const result = await pinata.upload.json(metadata);
-      const url = `https://gateway.pinata.cloud/ipfs/${result.IpfsHash}`;
-      console.log("✅ Metadata uploaded to IPFS:", url);
-      return url;
-    } catch (error) {
-      console.error("❌ Metadata upload failed:", error);
-      throw error;
-    }
-  }
 
   return (
     <div className="min-h-screen bg-gradient-to-br from-slate-100 to-slate-200 p-6">
@@ -1244,7 +1295,6 @@ function App() {
 
               {showRequests && (
                 <div className="space-y-3">
-                  {/* Request Payment Form */}
                   <div className="bg-white p-3 rounded-lg border border-purple-200">
                     <h4 className="font-semibold text-purple-800 text-sm mb-2">
                       Request Payment
@@ -1287,7 +1337,6 @@ function App() {
                     </div>
                   </div>
 
-                  {/* Pending Requests List */}
                   {pendingRequests.length > 0 && (
                     <div className="bg-white p-3 rounded-lg border border-purple-200 max-h-40 overflow-y-auto">
                       <h4 className="font-semibold text-purple-800 text-sm mb-2">
@@ -1321,7 +1370,6 @@ function App() {
                     </div>
                   )}
 
-                  {/* All Requests History */}
                   {allRequests.length > 0 && (
                     <div className="bg-white p-3 rounded-lg border border-purple-200 max-h-40 overflow-y-auto">
                       <h4 className="font-semibold text-purple-800 text-sm mb-2">
@@ -1435,7 +1483,6 @@ function App() {
               </h3>
 
               <div className="mt-3 space-y-3">
-                {/* Image Upload */}
                 <div
                   className="border-2 border-dashed border-purple-300 rounded-lg p-4 text-center cursor-pointer hover:border-purple-500 transition-colors"
                   onClick={() =>
@@ -1474,7 +1521,6 @@ function App() {
                   )}
                 </div>
 
-                {/* Expense Selection */}
                 <select
                   className="w-full border rounded-lg p-3 focus:outline-none focus:ring-2 focus:ring-purple-500"
                   value={selectedExpenseForNFT}
@@ -1491,7 +1537,6 @@ function App() {
                     ))}
                 </select>
 
-                {/* Mint Button */}
                 <button
                   onClick={mintExpenseNFT}
                   disabled={
