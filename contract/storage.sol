@@ -2,15 +2,13 @@
 pragma solidity ^0.8.13;
 
 contract Storage {
-    // ========== ENUMS ==========
     enum Status {
-        pending,   // 0
-        paid,      // 1
-        rejected,  // 2
-        badDebt    // 3
+        pending,   // 0 index
+        paid,      // 1ined
+        rejected,  // 2index
+        badDebt    // 3index
     }
 
-    // ========== STRUCTS ==========
     struct Expense {
         string expname;
         string paidby;
@@ -231,7 +229,6 @@ contract Storage {
         expenseId = 0;
     }
 
-    // ========== PAYMENT REQUEST FUNCTIONS ==========
 
     function requestPayment(address to, uint256 amount, string memory reason) public returns (uint256) {
         require(to != address(0), "Invalid address");
