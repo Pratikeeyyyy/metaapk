@@ -134,7 +134,7 @@ function App() {
     }
   }, []);
 
-  // nft.st0rage uplloading function
+  // nft.storage uplloading function
   const uploadToNFTStorage = useCallback(async (file) => {
     try {
       const cid = await nftStorage.storeBlob(file);
