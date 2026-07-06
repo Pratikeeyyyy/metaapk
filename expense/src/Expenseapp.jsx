@@ -141,7 +141,6 @@ function App() {
       return url;
     } catch (error) {
       console.error("❌ Upload to NFT.Storage failed:", error);
-      // ✅ FIX: Return placeholder instead of throwing
       return PLACEHOLDER_IMAGE;
     }
   }, []);
@@ -158,7 +157,6 @@ function App() {
       return url;
     } catch (error) {
       console.error("❌ Metadata upload failed:", error);
-      // ✅ FIX: Return placeholder instead of throwing
       return PLACEHOLDER_IMAGE;
     }
   }, []);
@@ -735,7 +733,6 @@ function App() {
       alert("Expense Added Successfully!");
     } catch (error) {
       console.error("Failed to add expense:", error);
-      // ✅ FIX: Better error message for user rejection
       if (error.code === "ACTION_REJECTED") {
         setError("Transaction was rejected in MetaMask");
         alert("You rejected the transaction in MetaMask");
@@ -764,7 +761,7 @@ function App() {
     loadUserNFTs,
   ]);
 
-  // ✅ FIX: Mark participant as paid with status check
+  // Mark participant as paid with status check
   const markParticipantPaid = useCallback(
     async (expenseId, participantAddress) => {
       if (!contract || !isConnected) {
@@ -802,7 +799,7 @@ function App() {
     [contract, isConnected, loadExpenses, expenses],
   );
 
-  // ✅ FIX: Mark debtor as paid with status check
+  // Mark debtor as paid with status check
   const markDebtorAsPaid = useCallback(
     async (expenseId, debtorAddress) => {
       if (!contract || !isConnected) {
