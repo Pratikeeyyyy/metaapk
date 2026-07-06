@@ -79,6 +79,9 @@ function App() {
   const [selectedExpenseForNFT, setSelectedExpenseForNFT] = useState("");
   const [mintingNFT, setMintingNFT] = useState(false);
 
+  // ✅ FIX 1: State to track if NFT has been imported
+  const [nftImported, setNftImported] = useState(false);
+
   // for the seepolia to be used
   const switchToSepolia = async () => {
     try {
@@ -369,29 +372,24 @@ function App() {
           }
         }
         setAllRequests(requests);
+
+        // ✅ FIX 2: Only show pending requests where USER is the recipient
         if (walletAddress) {
-          const pending =
-            await contractInstance.getPendingRequests(walletAddress);
           const pendingList = [];
-          for (let i = 0; i < pending.length; i++) {
-            const amountEth = parseFloat(
-              ethers.utils.formatEther(pending[i].amount),
-            );
-            pendingList.push({
-              id: i,
-              from: pending[i].from,
-              to: pending[i].to,
-              amount: amountEth,
-              reason: pending[i].reason,
-              isPaid: pending[i].isPaid,
-              timestamp: new Date(
-                Number(pending[i].timestamp) * 1000,
-              ).toLocaleString(),
-            });
+          for (let i = 0; i < requests.length; i++) {
+            const req = requests[i];
+            if (
+              req.to.toLowerCase() === walletAddress.toLowerCase() &&
+              !req.isPaid
+            ) {
+              pendingList.push(req);
+            }
           }
           setPendingRequests(pendingList);
+          console.log(
+            `✅ Found ${pendingList.length} pending requests for you`,
+          );
         }
-        console.log(`✅ Loaded ${requests.length} payment requests`);
       } catch (error) {
         console.log("ℹ️ Payment requests not available");
         setAllRequests([]);
@@ -484,9 +482,10 @@ function App() {
     setNftImage(null);
     setNftImageFile(null);
     setSelectedExpenseForNFT("");
+    setNftImported(false);
   }, []);
 
-  // importing to mmetamask (NFT)
+  // ✅ FIX 1: importing to mmetamask (NFT) - Can only import once
   const importNFTToMetaMask = useCallback(async () => {
     if (!window.ethereum) {
       alert("Please install MetaMask");
@@ -497,6 +496,12 @@ function App() {
         alert("You don't have any NFTs yet. Mint an expense NFT first!");
         return;
       }
+
+      if (nftImported) {
+        alert("✅ NFT already imported to MetaMask!");
+        return;
+      }
+
       const tokenId = userNFTs[0].tokenId;
       const wasAdded = await window.ethereum.request({
         method: "wallet_watchAsset",
@@ -509,6 +514,7 @@ function App() {
         },
       });
       if (wasAdded) {
+        setNftImported(true);
         alert("✅ NFT added to MetaMask!");
       } else {
         alert("❌ User rejected the request");
@@ -517,7 +523,7 @@ function App() {
       console.error("Failed to import NFT:", error);
       alert("Failed to import NFT: " + error.message);
     }
-  }, [userNFTs]);
+  }, [userNFTs, nftImported]);
 
   // minting the nft
   const mintExpenseNFT = useCallback(async () => {
@@ -779,6 +785,30 @@ function App() {
     [contract, isConnected, loadExpenses],
   );
 
+  // ✅ FIX 3: Mark debtor as paid (when they pay you)
+  const markDebtorAsPaid = useCallback(
+    async (expenseId, debtorAddress) => {
+      if (!contract || !isConnected) {
+        alert("Please connect wallet first");
+        return;
+      }
+      try {
+        setLoading(true);
+        const tx = await contract.markParticipantPaid(expenseId, debtorAddress);
+        await tx.wait();
+        await loadExpenses(contract);
+        await loadPaymentRequests(contract);
+        alert("✅ Debtor marked as paid!");
+      } catch (error) {
+        console.error("Failed to mark debtor as paid:", error);
+        alert("Failed: " + (error.reason || error.message));
+      } finally {
+        setLoading(false);
+      }
+    },
+    [contract, isConnected, loadExpenses, loadPaymentRequests],
+  );
+
   // Request payment from payer for a specific expense
   const requestPaymentFromPayer = useCallback(
     async (expenseId) => {
@@ -1027,10 +1057,17 @@ function App() {
                 {userNFTs.length > 0 && (
                   <button
                     onClick={importNFTToMetaMask}
-                    className="bg-purple-600 hover:bg-purple-700 text-white px-4 py-2 rounded-lg text-sm flex items-center gap-2 transition-colors"
+                    disabled={nftImported}
+                    className={`px-4 py-2 rounded-lg text-sm flex items-center gap-2 transition-colors ${
+                      nftImported
+                        ? "bg-green-100 text-green-700 cursor-not-allowed"
+                        : "bg-purple-600 hover:bg-purple-700 text-white"
+                    }`}
                   >
-                    <i className="fas fa-download"></i>
-                    Import to MetaMask
+                    <i
+                      className={`fas ${nftImported ? "fa-check-circle" : "fa-download"}`}
+                    ></i>
+                    {nftImported ? "Already Imported" : "Import to MetaMask"}
                   </button>
                 )}
               </div>
@@ -1427,9 +1464,24 @@ function App() {
                         ({formatAddress(debtor.address)})
                       </span>
                     </div>
-                    <span className="text-red-600 font-bold">
-                      {debtor.amount} ETH
-                    </span>
+                    <div className="flex items-center gap-2">
+                      <span className="text-red-600 font-bold">
+                        {debtor.amount} ETH
+                      </span>
+                      {/* ✅ FIX 3: Mark debtor as paid button */}
+                      <button
+                        onClick={() =>
+                          markDebtorAsPaid(
+                            debtor.expenseId || 0,
+                            debtor.address,
+                          )
+                        }
+                        disabled={loading || !isConnected}
+                        className="bg-green-500 hover:bg-green-600 text-white px-2 py-1 rounded text-xs disabled:opacity-50"
+                      >
+                        Mark Paid
+                      </button>
+                    </div>
                   </div>
                 ))}
               </div>
@@ -1516,6 +1568,7 @@ function App() {
                               const isUser =
                                 addr.toLowerCase() ===
                                 walletAddress?.toLowerCase();
+                              const isPaid = expense.status === 1;
                               return (
                                 <div
                                   key={idx}
@@ -1534,6 +1587,11 @@ function App() {
                                         You
                                       </span>
                                     )}
+                                    {isPaid && (
+                                      <span className="ml-2 bg-green-100 text-green-600 text-xs px-1.5 py-0.5 rounded">
+                                        ✅ Paid
+                                      </span>
+                                    )}
                                   </div>
                                   <div className="flex gap-2">
                                     {/* request payment from payers */}
@@ -1550,15 +1608,24 @@ function App() {
                                           Request Payer
                                         </button>
                                       )}
-                                    <button
-                                      onClick={() =>
-                                        markParticipantPaid(expense.id, addr)
-                                      }
-                                      disabled={loading || !isConnected}
-                                      className="bg-green-500 hover:bg-green-600 text-white px-2 py-1 rounded text-xs disabled:opacity-50"
-                                    >
-                                      Mark Paid
-                                    </button>
+                                    {/* Mark participant as paid - only for payer */}
+                                    {expense.payerAddress &&
+                                      expense.payerAddress.toLowerCase() ===
+                                        walletAddress?.toLowerCase() &&
+                                      !isPaid && (
+                                        <button
+                                          onClick={() =>
+                                            markParticipantPaid(
+                                              expense.id,
+                                              addr,
+                                            )
+                                          }
+                                          disabled={loading || !isConnected}
+                                          className="bg-green-500 hover:bg-green-600 text-white px-2 py-1 rounded text-xs disabled:opacity-50"
+                                        >
+                                          Mark Paid
+                                        </button>
+                                      )}
                                   </div>
                                 </div>
                               );
@@ -1690,29 +1757,50 @@ function App() {
                 </p>
               ) : (
                 <div className="space-y-2 max-h-[400px] overflow-y-auto">
-                  {allRequests.map((req, idx) => (
-                    <div
-                      key={idx}
-                      className={`border rounded-lg p-3 flex justify-between items-center ${req.isPaid ? "bg-gray-50 opacity-75" : "bg-white"}`}
-                    >
-                      <div>
-                        <p className="text-sm font-medium">
-                          {formatAddress(req.from)} → {formatAddress(req.to)}
-                        </p>
-                        <p className="text-xs text-gray-500">
-                          {req.reason} | {req.timestamp}
-                        </p>
+                  {allRequests
+                    .filter(
+                      (req) =>
+                        req.from.toLowerCase() ===
+                          walletAddress?.toLowerCase() ||
+                        req.to.toLowerCase() === walletAddress?.toLowerCase(),
+                    )
+                    .map((req, idx) => (
+                      <div
+                        key={idx}
+                        className={`border rounded-lg p-3 flex justify-between items-center ${req.isPaid ? "bg-gray-50 opacity-75" : "bg-white"}`}
+                      >
+                        <div>
+                          <p className="text-sm font-medium">
+                            {req.from.toLowerCase() ===
+                            walletAddress?.toLowerCase()
+                              ? "You → "
+                              : ""}
+                            {formatAddress(req.from)} → {formatAddress(req.to)}
+                            {req.to.toLowerCase() ===
+                            walletAddress?.toLowerCase()
+                              ? " ← You"
+                              : ""}
+                          </p>
+                          <p className="text-xs text-gray-500">
+                            {req.reason} | {req.timestamp}
+                          </p>
+                        </div>
+                        <div className="text-right">
+                          <p className="font-bold text-sm">{req.amount} ETH</p>
+                          <p
+                            className={`text-xs font-semibold ${req.isPaid ? "text-green-600" : "text-yellow-600"}`}
+                          >
+                            {req.isPaid ? "✅ Paid" : "⏳ Pending"}
+                          </p>
+                          <p className="text-xs text-gray-400 mt-1">
+                            {req.from.toLowerCase() ===
+                            walletAddress?.toLowerCase()
+                              ? "You owe"
+                              : "Owes you"}
+                          </p>
+                        </div>
                       </div>
-                      <div className="text-right">
-                        <p className="font-bold text-sm">{req.amount} ETH</p>
-                        <p
-                          className={`text-xs font-semibold ${req.isPaid ? "text-green-600" : "text-yellow-600"}`}
-                        >
-                          {req.isPaid ? "✅ Paid" : "⏳ Pending"}
-                        </p>
-                      </div>
-                    </div>
-                  ))}
+                    ))}
                 </div>
               )}
             </div>
