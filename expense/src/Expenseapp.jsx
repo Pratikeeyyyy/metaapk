@@ -2,16 +2,11 @@ import React, { useState, useEffect, useCallback } from "react";
 import { ethers } from "ethers";
 import { contractABI } from "./abi";
 import { nftABI } from "./nftABI";
-import { NFTStorage, Blob } from "nft.storage";
-import "globalthis/auto";
 
 // sepolia and nft contract address
 const CONTRACT_ADDRESS = "0x5e8013685a6fd02D54C500A8cDaf200Cf46cF7a0";
-const NFT_CONTRACT_ADDRESS = "0xB8B77bDfFb937714493eFgit B7F94801A07AA1e1a8a";
+const NFT_CONTRACT_ADDRESS = "0xB8B77bDfFb937714493eFB7F94801A07AA1e1a8a";
 const SEPOLIA_CHAIN_ID = "0xaa36a7";
-//nft ntf.storage
-const NFT_STORAGE_TOKEN = "69a92200.387c9765b6af4219bf2ee990ae39e7a1";
-const nftStorage = new NFTStorage({ token: NFT_STORAGE_TOKEN });
 
 // image for the nft
 const PLACEHOLDER_IMAGE =
@@ -132,28 +127,61 @@ function App() {
     }
   }, []);
 
-  // nft.st0rage uplloading function
-  const uploadToNFTStorage = useCallback(async (file) => {
+  // ✅ NEW: Upload file using Pinata
+  const uploadToPinata = useCallback(async (file) => {
     try {
-      const cid = await nftStorage.storeBlob(file);
-      const url = `https://${cid}.ipfs.nftstorage.link/${file.name}`;
-      console.log("✅ File uploaded to NFT.Storage:", url);
+      const formData = new FormData();
+      formData.append("file", file);
+
+      const response = await fetch(
+        "https://api.pinata.cloud/pinning/pinFileToIPFS",
+        {
+          method: "POST",
+          headers: {
+            Authorization: `Bearer ${process.env.REACT_APP_PINATA_JWT}`,
+          },
+          body: formData,
+        },
+      );
+
+      if (!response.ok) {
+        const errorData = await response.json();
+        throw new Error(errorData.error || "Upload failed");
+      }
+
+      const data = await response.json();
+      const url = `https://gateway.pinata.cloud/ipfs/${data.IpfsHash}`;
+      console.log("✅ File uploaded to Pinata:", url);
       return url;
     } catch (error) {
-      console.error("❌ Upload to NFT.Storage failed:", error);
+      console.error("❌ Upload to Pinata failed:", error);
       return PLACEHOLDER_IMAGE;
     }
   }, []);
 
-  const uploadMetadataToNFTStorage = useCallback(async (metadata) => {
+  // ✅ NEW: Upload metadata using Pinata
+  const uploadMetadataToPinata = useCallback(async (metadata) => {
     try {
-      const metadataBlob = new Blob([JSON.stringify(metadata)], {
-        type: "application/json",
-      });
-      const metadataFile = new File([metadataBlob], "metadata.json");
-      const cid = await nftStorage.storeBlob(metadataFile);
-      const url = `https://${cid}.ipfs.nftstorage.link/metadata.json`;
-      console.log("✅ Metadata uploaded to NFT.Storage:", url);
+      const response = await fetch(
+        "https://api.pinata.cloud/pinning/pinJSONToIPFS",
+        {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+            Authorization: `Bearer ${process.env.REACT_APP_PINATA_JWT}`,
+          },
+          body: JSON.stringify(metadata),
+        },
+      );
+
+      if (!response.ok) {
+        const errorData = await response.json();
+        throw new Error(errorData.error || "Metadata upload failed");
+      }
+
+      const data = await response.json();
+      const url = `https://gateway.pinata.cloud/ipfs/${data.IpfsHash}`;
+      console.log("✅ Metadata uploaded to Pinata:", url);
       return url;
     } catch (error) {
       console.error("❌ Metadata upload failed:", error);
@@ -517,7 +545,7 @@ function App() {
     }
   }, [userNFTs, nftImported]);
 
-  // minting the nft
+  // ✅ UPDATED: minting the nft with Pinata
   const mintExpenseNFT = useCallback(async () => {
     if (!nftContract || !isConnected) {
       alert("Please connect wallet first");
@@ -540,8 +568,8 @@ function App() {
       let imageUrl = PLACEHOLDER_IMAGE;
       if (nftImageFile) {
         try {
-          imageUrl = await uploadToNFTStorage(nftImageFile);
-          console.log("✅ Image uploaded to NFT.Storage:", imageUrl);
+          imageUrl = await uploadToPinata(nftImageFile);
+          console.log("✅ Image uploaded to Pinata:", imageUrl);
         } catch (uploadError) {
           console.error("Image upload failed, using placeholder:", uploadError);
           imageUrl = PLACEHOLDER_IMAGE;
@@ -568,8 +596,8 @@ function App() {
       };
       let metadataUrl = PLACEHOLDER_IMAGE;
       try {
-        metadataUrl = await uploadMetadataToNFTStorage(metadata);
-        console.log("✅ Metadata uploaded to NFT.Storage:", metadataUrl);
+        metadataUrl = await uploadMetadataToPinata(metadata);
+        console.log("✅ Metadata uploaded to Pinata:", metadataUrl);
       } catch (uploadError) {
         console.error(
           "Metadata upload failed, using placeholder:",
@@ -605,8 +633,8 @@ function App() {
     expenses,
     nftImageFile,
     loadUserNFTs,
-    uploadToNFTStorage,
-    uploadMetadataToNFTStorage,
+    uploadToPinata,
+    uploadMetadataToPinata,
   ]);
 
   // ===== GET CONTRACT BALANCE =====
