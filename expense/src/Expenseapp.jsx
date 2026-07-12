@@ -1,3 +1,5 @@
+// Main Expense Sharing App - NFT.Storage Version with Dynamic Participants
+
 import React, { useState, useEffect, useCallback } from "react";
 import { ethers } from "ethers";
 import { contractABI } from "./abi";
@@ -316,6 +318,7 @@ function App() {
                   ),
                   expname: exp.expname || "Unknown",
                   role: "Participant",
+                  expenseId: i, // ✅ Add expenseId to track which expense
                 });
               }
             } catch (err) {
@@ -789,7 +792,7 @@ function App() {
     loadUserNFTs,
   ]);
 
-  // Mark participant as paid with status check
+  // ✅ FIX: Mark participant as paid with immediate UI update
   const markParticipantPaid = useCallback(
     async (expenseId, participantAddress) => {
       if (!contract || !isConnected) {
@@ -811,7 +814,11 @@ function App() {
           participantAddress,
         );
         await tx.wait();
+
+        // ✅ Immediately reload all data to reflect changes
         await loadExpenses(contract);
+        await loadPaymentRequests(contract);
+
         alert("✅ Participant marked as paid!");
       } catch (error) {
         console.error("Failed to mark participant as paid:", error);
@@ -824,10 +831,10 @@ function App() {
         setLoading(false);
       }
     },
-    [contract, isConnected, loadExpenses, expenses],
+    [contract, isConnected, loadExpenses, loadPaymentRequests, expenses],
   );
 
-  // Mark debtor as paid with status check
+  // ✅ FIX: Mark debtor as paid with immediate UI update
   const markDebtorAsPaid = useCallback(
     async (expenseId, debtorAddress) => {
       if (!contract || !isConnected) {
@@ -846,8 +853,11 @@ function App() {
         setLoading(true);
         const tx = await contract.markParticipantPaid(expenseId, debtorAddress);
         await tx.wait();
+
+        // ✅ Immediately reload all data to reflect changes
         await loadExpenses(contract);
         await loadPaymentRequests(contract);
+
         alert("✅ Debtor marked as paid!");
       } catch (error) {
         console.error("Failed to mark debtor as paid:", error);
@@ -1522,6 +1532,7 @@ function App() {
                       <span className="text-red-600 font-bold">
                         {debtor.amount} ETH
                       </span>
+                      {/* ✅ FIX: Mark debtor as paid - removes from bad debtors list */}
                       <button
                         onClick={() =>
                           markDebtorAsPaid(
@@ -1661,7 +1672,7 @@ function App() {
                                           Request Payer
                                         </button>
                                       )}
-                                    {/* Mark participant as paid - only for payer and only if not paid */}
+                                    {/* ✅ FIX: Mark participant as paid - only for payer and only if not paid */}
                                     {expense.payerAddress &&
                                       expense.payerAddress.toLowerCase() ===
                                         walletAddress?.toLowerCase() &&
