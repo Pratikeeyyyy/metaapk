@@ -1,26 +1,18 @@
-// Main Expense Sharing App - NFT.Storage Version with Dynamic Participants
-
 import React, { useState, useEffect, useCallback } from "react";
 import { ethers } from "ethers";
 import { contractABI } from "./abi";
-import { nftABI } from "./nftABI";
-import { NFTStorage, Blob } from "nft.storage";
-import "globalthis/auto";
+import { nftABI } from "./NftABI";
 
 // sepolia and nft contract address
 const CONTRACT_ADDRESS = "0x5e8013685a6fd02D54C500A8cDaf200Cf46cF7a0";
 const NFT_CONTRACT_ADDRESS = "0xB8B77bDfFb937714493eFB7F94801A07AA1e1a8a";
 const SEPOLIA_CHAIN_ID = "0xaa36a7";
 
-// this is storage where ntf is beieng stroed form nft.storage
-const NFT_STORAGE_TOKEN = "a51e2152.69296186cb8c49db991b66c5b4d63254";
-const nftStorage = new NFTStorage({ token: NFT_STORAGE_TOKEN });
-
 // image for the nft
 const PLACEHOLDER_IMAGE =
   "data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='400' height='400' viewBox='0 0 400 400'%3E%3Crect width='400' height='400' fill='%236C63FF'/%3E%3Ctext x='50%25' y='50%25' font-size='24' fill='white' text-anchor='middle' dominant-baseline='central'%3E💰 Expense NFT%3C/text%3E%3C/svg%3E";
 
-function App() {
+function ExpenseApp() {
   // for the wallet, here are the state of metawallet
   const [provider, setProvider] = useState(null);
   const [signer, setSigner] = useState(null);
@@ -78,6 +70,7 @@ function App() {
   const [nftImageFile, setNftImageFile] = useState(null);
   const [selectedExpenseForNFT, setSelectedExpenseForNFT] = useState("");
   const [mintingNFT, setMintingNFT] = useState(false);
+  const [nftImported, setNftImported] = useState(false);
 
   // for the seepolia to be used
   const switchToSepolia = async () => {
@@ -134,32 +127,65 @@ function App() {
     }
   }, []);
 
-  // nft.storage uplloading function
-  const uploadToNFTStorage = useCallback(async (file) => {
+  // ✅ NEW: Upload file using Pinata
+  const uploadToPinata = useCallback(async (file) => {
     try {
-      const cid = await nftStorage.storeBlob(file);
-      const url = `https://${cid}.ipfs.nftstorage.link/${file.name}`;
-      console.log("✅ File uploaded to NFT.Storage:", url);
+      const formData = new FormData();
+      formData.append("file", file);
+
+      const response = await fetch(
+        "https://api.pinata.cloud/pinning/pinFileToIPFS",
+        {
+          method: "POST",
+          headers: {
+            Authorization: `Bearer ${process.env.REACT_APP_PINATA_JWT}`,
+          },
+          body: formData,
+        },
+      );
+
+      if (!response.ok) {
+        const errorData = await response.json();
+        throw new Error(errorData.error || "Upload failed");
+      }
+
+      const data = await response.json();
+      const url = `https://gateway.pinata.cloud/ipfs/${data.IpfsHash}`;
+      console.log("✅ File uploaded to Pinata:", url);
       return url;
     } catch (error) {
-      console.error("❌ Upload to NFT.Storage failed:", error);
-      throw error;
+      console.error("❌ Upload to Pinata failed:", error);
+      return PLACEHOLDER_IMAGE;
     }
   }, []);
 
-  const uploadMetadataToNFTStorage = useCallback(async (metadata) => {
+  // ✅ NEW: Upload metadata using Pinata
+  const uploadMetadataToPinata = useCallback(async (metadata) => {
     try {
-      const metadataBlob = new Blob([JSON.stringify(metadata)], {
-        type: "application/json",
-      });
-      const metadataFile = new File([metadataBlob], "metadata.json");
-      const cid = await nftStorage.storeBlob(metadataFile);
-      const url = `https://${cid}.ipfs.nftstorage.link/metadata.json`;
-      console.log("✅ Metadata uploaded to NFT.Storage:", url);
+      const response = await fetch(
+        "https://api.pinata.cloud/pinning/pinJSONToIPFS",
+        {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+            Authorization: `Bearer ${process.env.REACT_APP_PINATA_JWT}`,
+          },
+          body: JSON.stringify(metadata),
+        },
+      );
+
+      if (!response.ok) {
+        const errorData = await response.json();
+        throw new Error(errorData.error || "Metadata upload failed");
+      }
+
+      const data = await response.json();
+      const url = `https://gateway.pinata.cloud/ipfs/${data.IpfsHash}`;
+      console.log("✅ Metadata uploaded to Pinata:", url);
       return url;
     } catch (error) {
       console.error("❌ Metadata upload failed:", error);
-      throw error;
+      return PLACEHOLDER_IMAGE;
     }
   }, []);
 
@@ -290,6 +316,7 @@ function App() {
                   ),
                   expname: exp.expname || "Unknown",
                   role: "Participant",
+                  expenseId: i, // ✅ Add expenseId to track which expense
                 });
               }
             } catch (err) {
@@ -369,27 +396,21 @@ function App() {
           }
         }
         setAllRequests(requests);
+
+        // Only show pending requests where USER is the recipient
         if (walletAddress) {
-          const pending =
-            await contractInstance.getPendingRequests(walletAddress);
           const pendingList = [];
-          for (let i = 0; i < pending.length; i++) {
-            const amountEth = parseFloat(
-              ethers.utils.formatEther(pending[i].amount),
-            );
-            pendingList.push({
-              from: pending[i].from,
-              amount: amountEth,
-              reason: pending[i].reason,
-              isPaid: pending[i].isPaid,
-              timestamp: new Date(
-                Number(pending[i].timestamp) * 1000,
-              ).toLocaleString(),
-            });
+          for (let i = 0; i < requests.length; i++) {
+            const req = requests[i];
+            if (
+              req.to.toLowerCase() === walletAddress.toLowerCase() &&
+              !req.isPaid
+            ) {
+              pendingList.push(req);
+            }
           }
           setPendingRequests(pendingList);
         }
-        console.log(`✅ Loaded ${requests.length} payment requests`);
       } catch (error) {
         console.log("ℹ️ Payment requests not available");
         setAllRequests([]);
@@ -482,6 +503,7 @@ function App() {
     setNftImage(null);
     setNftImageFile(null);
     setSelectedExpenseForNFT("");
+    setNftImported(false);
   }, []);
 
   // importing to mmetamask (NFT)
@@ -495,6 +517,12 @@ function App() {
         alert("You don't have any NFTs yet. Mint an expense NFT first!");
         return;
       }
+
+      if (nftImported) {
+        alert("✅ NFT already imported to MetaMask!");
+        return;
+      }
+
       const tokenId = userNFTs[0].tokenId;
       const wasAdded = await window.ethereum.request({
         method: "wallet_watchAsset",
@@ -507,6 +535,7 @@ function App() {
         },
       });
       if (wasAdded) {
+        setNftImported(true);
         alert("✅ NFT added to MetaMask!");
       } else {
         alert("❌ User rejected the request");
@@ -515,9 +544,9 @@ function App() {
       console.error("Failed to import NFT:", error);
       alert("Failed to import NFT: " + error.message);
     }
-  }, [userNFTs]);
+  }, [userNFTs, nftImported]);
 
-  // minting the nft
+  // ✅ UPDATED: minting the nft with Pinata
   const mintExpenseNFT = useCallback(async () => {
     if (!nftContract || !isConnected) {
       alert("Please connect wallet first");
@@ -540,10 +569,11 @@ function App() {
       let imageUrl = PLACEHOLDER_IMAGE;
       if (nftImageFile) {
         try {
-          imageUrl = await uploadToNFTStorage(nftImageFile);
-          console.log("✅ Image uploaded to NFT.Storage:", imageUrl);
+          imageUrl = await uploadToPinata(nftImageFile);
+          console.log("✅ Image uploaded to Pinata:", imageUrl);
         } catch (uploadError) {
-          console.error("Image upload failed:", uploadError);
+          console.error("Image upload failed, using placeholder:", uploadError);
+          imageUrl = PLACEHOLDER_IMAGE;
         }
       }
       let participantList = "";
@@ -567,10 +597,14 @@ function App() {
       };
       let metadataUrl = PLACEHOLDER_IMAGE;
       try {
-        metadataUrl = await uploadMetadataToNFTStorage(metadata);
-        console.log("✅ Metadata uploaded to NFT.Storage:", metadataUrl);
+        metadataUrl = await uploadMetadataToPinata(metadata);
+        console.log("✅ Metadata uploaded to Pinata:", metadataUrl);
       } catch (uploadError) {
-        console.error("Metadata upload failed:", uploadError);
+        console.error(
+          "Metadata upload failed, using placeholder:",
+          uploadError,
+        );
+        metadataUrl = PLACEHOLDER_IMAGE;
       }
       setUploading(false);
       const tx = await nftContract.mintExpenseNFT(
@@ -600,8 +634,8 @@ function App() {
     expenses,
     nftImageFile,
     loadUserNFTs,
-    uploadToNFTStorage,
-    uploadMetadataToNFTStorage,
+    uploadToPinata,
+    uploadMetadataToPinata,
   ]);
 
   // ===== GET CONTRACT BALANCE =====
@@ -728,8 +762,13 @@ function App() {
       alert("Expense Added Successfully!");
     } catch (error) {
       console.error("Failed to add expense:", error);
-      setError("Transaction failed: " + (error.reason || error.message));
-      alert("Transaction failed: " + (error.reason || error.message));
+      if (error.code === "ACTION_REJECTED") {
+        setError("Transaction was rejected in MetaMask");
+        alert("You rejected the transaction in MetaMask");
+      } else {
+        setError("Transaction failed: " + (error.reason || error.message));
+        alert("Transaction failed: " + (error.reason || error.message));
+      }
     } finally {
       setLoading(false);
     }
@@ -751,13 +790,21 @@ function App() {
     loadUserNFTs,
   ]);
 
-  // Mark participant as paid
+  // ✅ FIX: Mark participant as paid with immediate UI update
   const markParticipantPaid = useCallback(
     async (expenseId, participantAddress) => {
       if (!contract || !isConnected) {
         alert("Please connect wallet first");
         return;
       }
+
+      // Check if expense is already paid
+      const expense = expenses.find((e) => e.id === expenseId);
+      if (expense && expense.status === 1) {
+        alert("⚠️ This expense is already marked as paid!");
+        return;
+      }
+
       try {
         setLoading(true);
         const tx = await contract.markParticipantPaid(
@@ -765,16 +812,63 @@ function App() {
           participantAddress,
         );
         await tx.wait();
+
+        // ✅ Immediately reload all data to reflect changes
         await loadExpenses(contract);
+        await loadPaymentRequests(contract);
+
         alert("✅ Participant marked as paid!");
       } catch (error) {
         console.error("Failed to mark participant as paid:", error);
-        alert("Failed: " + (error.reason || error.message));
+        if (error.message.includes("Expense not pending")) {
+          alert("⚠️ This expense is already paid or not pending!");
+        } else {
+          alert("Failed: " + (error.reason || error.message));
+        }
       } finally {
         setLoading(false);
       }
     },
-    [contract, isConnected, loadExpenses],
+    [contract, isConnected, loadExpenses, loadPaymentRequests, expenses],
+  );
+
+  // ✅ FIX: Mark debtor as paid with immediate UI update
+  const markDebtorAsPaid = useCallback(
+    async (expenseId, debtorAddress) => {
+      if (!contract || !isConnected) {
+        alert("Please connect wallet first");
+        return;
+      }
+
+      // Check if expense is already paid
+      const expense = expenses.find((e) => e.id === expenseId);
+      if (expense && expense.status === 1) {
+        alert("⚠️ This expense is already marked as paid!");
+        return;
+      }
+
+      try {
+        setLoading(true);
+        const tx = await contract.markParticipantPaid(expenseId, debtorAddress);
+        await tx.wait();
+
+        // ✅ Immediately reload all data to reflect changes
+        await loadExpenses(contract);
+        await loadPaymentRequests(contract);
+
+        alert("✅ Debtor marked as paid!");
+      } catch (error) {
+        console.error("Failed to mark debtor as paid:", error);
+        if (error.message.includes("Expense not pending")) {
+          alert("⚠️ This expense is not pending or already paid!");
+        } else {
+          alert("Failed: " + (error.reason || error.message));
+        }
+      } finally {
+        setLoading(false);
+      }
+    },
+    [contract, isConnected, loadExpenses, loadPaymentRequests, expenses],
   );
 
   // Request payment from payer for a specific expense
@@ -786,6 +880,7 @@ function App() {
       }
       try {
         setLoading(true);
+        // the actual request to the address that the payer creates expenses
         const tx = await contract.requestPaymentFromPayer(expenseId);
         await tx.wait();
         await loadPaymentRequests(contract);
@@ -818,44 +913,35 @@ function App() {
     return `${address.slice(0, 6)}...${address.slice(-4)}`;
   };
 
-  // handling payment rewuest
+  // the debtors can pay directly to the owner and the participants except debtors also can pay to the actual owner
   const handleRequestPayment = useCallback(async () => {
-    if (!contract || !isConnected) {
+    if (!signer || !isConnected) {
       alert("Please connect wallet");
       return;
     }
-    if (!requestRecipient || !requestAmount || !requestReason) {
-      alert("Please fill all fields");
+    if (!requestRecipient || !requestAmount) {
+      alert("Please fill owner address and amount");
       return;
     }
     try {
       setRequestLoading(true);
-      const amt = ethers.utils.parseEther(requestAmount);
-      const tx = await contract.requestPayment(
-        requestRecipient,
-        amt,
-        requestReason,
-      );
+      // the debtors can pay directly to the owner and the participants except debtors also can pay to the actual owner
+      const tx = await signer.sendTransaction({
+        to: requestRecipient,
+        value: ethers.utils.parseEther(requestAmount),
+      });
       await tx.wait();
-      await loadPaymentRequests(contract);
       setRequestRecipient("");
       setRequestAmount("");
       setRequestReason("");
-      alert("✅ Payment request sent!");
+      alert("✅ Paid directly to actual owner successfully!");
     } catch (error) {
-      console.error("❌ Failed to request payment:", error);
-      alert("Failed to request payment: " + (error.reason || error.message));
+      console.error("❌ Failed to pay owner:", error);
+      alert("Failed to pay: " + (error.reason || error.message));
     } finally {
       setRequestLoading(false);
     }
-  }, [
-    contract,
-    isConnected,
-    requestRecipient,
-    requestAmount,
-    requestReason,
-    loadPaymentRequests,
-  ]);
+  }, [signer, isConnected, requestRecipient, requestAmount, requestReason]);
 
   //  PAY REQUEST
   const payRequest = useCallback(
@@ -880,6 +966,41 @@ function App() {
     },
     [contract, isConnected, loadPaymentRequests],
   );
+
+  // create a reset butoon at the end so that when i click reset it resets the expenses
+  const resetExpenses = useCallback(async () => {
+    if (!contract || !isConnected) {
+      alert("Please connect wallet first");
+      return;
+    }
+    if (
+      window.confirm(
+        "Are you absolutely sure? This will delete all expenses permanently.",
+      )
+    ) {
+      try {
+        setLoading(true);
+        const tx = await contract.resetexp();
+        await tx.wait();
+        await loadExpenses(contract);
+        await loadPaymentRequests(contract);
+        await getContractBalance(provider);
+        alert("✅ Expenses reset successfully!");
+      } catch (error) {
+        console.error("Failed to reset expenses:", error);
+        alert("Failed to reset expenses: " + (error.reason || error.message));
+      } finally {
+        setLoading(false);
+      }
+    }
+  }, [
+    contract,
+    isConnected,
+    loadExpenses,
+    loadPaymentRequests,
+    getContractBalance,
+    provider,
+  ]);
 
   //  USE EFFECTS
   useEffect(() => {
@@ -998,10 +1119,17 @@ function App() {
                 {userNFTs.length > 0 && (
                   <button
                     onClick={importNFTToMetaMask}
-                    className="bg-purple-600 hover:bg-purple-700 text-white px-4 py-2 rounded-lg text-sm flex items-center gap-2 transition-colors"
+                    disabled={nftImported}
+                    className={`px-4 py-2 rounded-lg text-sm flex items-center gap-2 transition-colors ${
+                      nftImported
+                        ? "bg-green-100 text-green-700 cursor-not-allowed"
+                        : "bg-purple-600 hover:bg-purple-700 text-white"
+                    }`}
                   >
-                    <i className="fas fa-download"></i>
-                    Import to MetaMask
+                    <i
+                      className={`fas ${nftImported ? "fa-check-circle" : "fa-download"}`}
+                    ></i>
+                    {nftImported ? "Already Imported" : "Import to MetaMask"}
                   </button>
                 )}
               </div>
@@ -1347,570 +1475,532 @@ function App() {
           <div className="space-y-6">
             {/* Contract Balance */}
             <div className="bg-gradient-to-r from-orange-500 to-orange-600 rounded-2xl shadow-xl p-6 text-white">
-              <h3 className="text-lg font-bold">
-                <i className="fas fa-landmark"></i> Contract Balance
-              </h3>
-              <p className="text-3xl font-bold mt-2">{contractBalance} ETH</p>
-              <p className="text-sm opacity-90 mt-2">
-                Total ETH locked in contract
-              </p>
-            </div>
-
-            {/* Summary Stats */}
-            <div className="bg-white rounded-2xl shadow-xl p-6">
-              <div className="flex justify-between items-center mb-4">
-                <h3 className="text-lg font-bold text-slate-700">
-                  <i className="fas fa-chart-simple"></i> Summary
-                </h3>
+              <div className="flex justify-between items-center">
+                <div>
+                  <p className="text-orange-100 text-sm">Contract Balance</p>
+                  <p className="text-3xl font-bold">{contractBalance} ETH</p>
+                </div>
                 <button
                   onClick={handleRefresh}
-                  disabled={refreshing || !isConnected || !isCorrectNetwork}
-                  className="text-blue-500 hover:text-blue-700 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+                  className="bg-white/20 hover:bg-white/30 p-3 rounded-full transition-colors"
+                  disabled={refreshing}
                 >
                   <i
                     className={`fas fa-sync-alt ${refreshing ? "fa-spin" : ""}`}
                   ></i>
                 </button>
               </div>
-              <div className="mt-3 space-y-3">
-                <div className="flex justify-between items-center border-b border-gray-100 pb-2">
-                  <span className="text-slate-600">Total Expenses:</span>
-                  <span className="font-bold text-slate-800 text-lg">
-                    {expenses.length}
-                  </span>
+              <div className="mt-4 grid grid-cols-3 gap-4 text-center">
+                <div className="bg-white/20 rounded-lg p-2">
+                  <p className="text-2xl font-bold">{totalExpenses}</p>
+                  <p className="text-xs text-orange-100">Total Expenses</p>
                 </div>
-                <div className="flex justify-between items-center border-b border-gray-100 pb-2">
-                  <span className="text-slate-600">Total Amount:</span>
-                  <span className="font-bold text-green-600 text-lg">
-                    {expenses.reduce((sum, exp) => sum + exp.amt, 0).toFixed(4)}{" "}
-                    ETH
-                  </span>
+                <div className="bg-white/20 rounded-lg p-2">
+                  <p className="text-2xl font-bold">{totalAmount.toFixed(2)}</p>
+                  <p className="text-xs text-orange-100">Total Amount</p>
                 </div>
-                <div className="flex justify-between items-center border-b border-gray-100 pb-2">
-                  <span className="text-slate-600">Pending:</span>
-                  <span className="font-bold text-yellow-600 text-lg">
-                    {expenses.filter((exp) => exp.status === 0).length}
-                  </span>
-                </div>
-                <div className="flex justify-between items-center">
-                  <span className="text-slate-600">Bad Debtors:</span>
-                  <span className="font-bold text-red-600 text-lg">
-                    {badDebtors.length}
-                  </span>
+                <div className="bg-white/20 rounded-lg p-2">
+                  <p className="text-2xl font-bold">{pendingCount}</p>
+                  <p className="text-xs text-orange-100">Pending</p>
                 </div>
               </div>
-              {!dataLoaded && isConnected && isCorrectNetwork && (
-                <div className="mt-3 text-center text-sm text-blue-500">
-                  <i className="fas fa-spinner fa-spin mr-2"></i>
-                  Loading data...
-                </div>
-              )}
-              {dataLoaded &&
-                isConnected &&
-                isCorrectNetwork &&
-                expenses.length === 0 && (
-                  <div className="mt-3 text-center text-sm text-gray-500">
-                    No expenses found. Add your first expense!
-                  </div>
-                )}
-              {!isConnected && (
-                <div className="mt-3 text-center text-sm text-gray-400">
-                  Connect wallet to view summary
-                </div>
-              )}
             </div>
 
-            {/* Payment Requests Section */}
-            <div className="bg-purple-50 rounded-2xl shadow-xl p-6 border-2 border-purple-200">
-              <div className="flex justify-between items-center mb-4">
-                <h3 className="text-lg font-bold text-purple-700 flex items-center gap-2">
-                  <i className="fas fa-hand-holding-usd"></i> Payment Requests
-                  {pendingRequests.length > 0 && (
-                    <span className="bg-purple-600 text-white text-xs px-2 py-1 rounded-full">
-                      {pendingRequests.length}
-                    </span>
-                  )}
+            {/* Bad Debtors Warning */}
+            {badDebtors.length > 0 && (
+              <div className="bg-red-50 border-2 border-red-300 rounded-2xl p-4">
+                <h3 className="text-red-700 font-bold flex items-center gap-2 mb-2">
+                  <i className="fas fa-exclamation-triangle"></i> Bad Debtors
+                  Detected
                 </h3>
-                <button
-                  onClick={() => setShowRequests(!showRequests)}
-                  className="text-purple-600 hover:text-purple-800"
-                >
-                  <i
-                    className={`fas fa-chevron-${showRequests ? "up" : "down"}`}
-                  ></i>
-                </button>
-              </div>
-
-              {showRequests && (
-                <div className="space-y-3">
-                  <div className="bg-white p-3 rounded-lg border border-purple-200">
-                    <h4 className="font-semibold text-purple-800 text-sm mb-2">
-                      Request Payment
-                    </h4>
-                    <div className="space-y-2">
-                      <input
-                        type="text"
-                        placeholder="Friend's wallet address (0x...)"
-                        className="w-full border rounded p-2 text-sm"
-                        value={requestRecipient}
-                        onChange={(e) => setRequestRecipient(e.target.value)}
-                        disabled={!isConnected || !isCorrectNetwork}
-                      />
-                      <input
-                        type="number"
-                        step="0.001"
-                        placeholder="Amount (ETH)"
-                        className="w-full border rounded p-2 text-sm"
-                        value={requestAmount}
-                        onChange={(e) => setRequestAmount(e.target.value)}
-                        disabled={!isConnected || !isCorrectNetwork}
-                      />
-                      <input
-                        type="text"
-                        placeholder="Reason (e.g., Dinner share)"
-                        className="w-full border rounded p-2 text-sm"
-                        value={requestReason}
-                        onChange={(e) => setRequestReason(e.target.value)}
-                        disabled={!isConnected || !isCorrectNetwork}
-                      />
+                {badDebtors.map((debtor, idx) => (
+                  <div
+                    key={idx}
+                    className="flex justify-between items-center bg-white p-2 rounded mt-1"
+                  >
+                    <div>
+                      <span className="font-semibold text-red-700">
+                        {debtor.name}
+                      </span>
+                      <span className="text-gray-500 text-sm ml-2">
+                        ({formatAddress(debtor.address)})
+                      </span>
+                    </div>
+                    <div className="flex items-center gap-2">
+                      <span className="text-red-600 font-bold">
+                        {debtor.amount} ETH
+                      </span>
+                      {/* ✅ FIX: Mark debtor as paid - removes from bad debtors list */}
                       <button
-                        onClick={handleRequestPayment}
-                        disabled={
-                          requestLoading || !isConnected || !isCorrectNetwork
+                        onClick={() =>
+                          markDebtorAsPaid(
+                            debtor.expenseId || 0,
+                            debtor.address,
+                          )
                         }
-                        className="w-full bg-purple-600 hover:bg-purple-700 text-white py-2 rounded text-sm"
+                        disabled={loading || !isConnected}
+                        className="bg-green-500 hover:bg-green-600 text-white px-2 py-1 rounded text-xs disabled:opacity-50"
                       >
-                        {requestLoading ? "Sending..." : "Request Payment"}
+                        Mark Paid
                       </button>
                     </div>
                   </div>
-
-                  {pendingRequests.length > 0 && (
-                    <div className="bg-white p-3 rounded-lg border border-purple-200 max-h-40 overflow-y-auto">
-                      <h4 className="font-semibold text-purple-800 text-sm mb-2">
-                        You Owe
-                      </h4>
-                      {pendingRequests.map((req, index) => (
-                        <div
-                          key={index}
-                          className="border-b border-gray-100 py-2 last:border-0"
-                        >
-                          <div className="flex justify-between items-center">
-                            <div>
-                              <p className="text-sm font-semibold">
-                                {req.reason}
-                              </p>
-                              <p className="text-xs text-gray-500">
-                                From: {formatAddress(req.from)} | Amount:{" "}
-                                {req.amount.toFixed(3)} ETH
-                              </p>
-                            </div>
-                            <button
-                              onClick={() => payRequest(index, req.amount)}
-                              disabled={loading}
-                              className="bg-green-500 hover:bg-green-600 text-white px-3 py-1 rounded text-xs"
-                            >
-                              Pay
-                            </button>
-                          </div>
-                        </div>
-                      ))}
-                    </div>
-                  )}
-
-                  {allRequests.length > 0 && (
-                    <div className="bg-white p-3 rounded-lg border border-purple-200 max-h-40 overflow-y-auto">
-                      <h4 className="font-semibold text-purple-800 text-sm mb-2">
-                        Request History
-                      </h4>
-                      {allRequests.map((req, index) => (
-                        <div
-                          key={index}
-                          className={`border-b border-gray-100 py-1 last:border-0 ${req.isPaid ? "bg-green-50" : ""}`}
-                        >
-                          <div className="flex justify-between items-center text-xs">
-                            <span className="font-semibold">{req.reason}</span>
-                            <span
-                              className={
-                                req.isPaid
-                                  ? "text-green-600"
-                                  : "text-yellow-600"
-                              }
-                            >
-                              {req.isPaid ? "✅ Paid" : "⏳ Pending"}
-                            </span>
-                          </div>
-                          <div className="text-xs text-gray-500">
-                            {formatAddress(req.from)} → {formatAddress(req.to)}{" "}
-                            | {req.amount.toFixed(3)} ETH
-                          </div>
-                        </div>
-                      ))}
-                    </div>
-                  )}
-                </div>
-              )}
-            </div>
-
-            {/* Bad Debtors List */}
-            <div className="bg-red-50 rounded-2xl shadow-xl p-6 border-2 border-red-200">
-              <h3 className="text-lg font-bold text-red-700 flex items-center gap-2">
-                <i className="fas fa-skull"></i> Bad Debtors
-                {badDebtors.length > 0 && (
-                  <span className="bg-red-600 text-white text-xs px-2 py-1 rounded-full">
-                    {badDebtors.length}
-                  </span>
-                )}
-              </h3>
-              <div className="mt-3 space-y-2 max-h-40 overflow-y-auto custom-scrollbar">
-                {!isConnected || !isCorrectNetwork ? (
-                  <div className="text-center text-red-400 py-4">
-                    <p>Connect to Sepolia to view</p>
-                  </div>
-                ) : badDebtors.length === 0 ? (
-                  <div className="text-center text-red-400 py-4">
-                    <i className="fas fa-check-circle text-2xl mb-2 block"></i>
-                    <p>No bad debtors yet</p>
-                  </div>
-                ) : (
-                  badDebtors.map((debtor, index) => (
-                    <div
-                      key={index}
-                      className="bg-white p-3 rounded-lg border border-red-200 hover:shadow-md transition-shadow"
-                    >
-                      <div className="flex justify-between items-center">
-                        <div className="flex-1">
-                          <div className="flex items-center gap-2">
-                            <span className="font-semibold text-red-700">
-                              {debtor.name}
-                            </span>
-                            <span className="text-xs bg-red-100 text-red-600 px-2 py-0.5 rounded">
-                              {debtor.role || "Participant"}
-                            </span>
-                          </div>
-                          <div className="text-xs text-gray-500 mt-0.5">
-                            <i className="fas fa-wallet mr-1"></i>
-                            {debtor.address && debtor.address !== "Unknown"
-                              ? formatAddress(debtor.address)
-                              : "No wallet address provided"}
-                          </div>
-                          {debtor.expname && (
-                            <div className="text-xs text-gray-400 mt-1">
-                              <i className="fas fa-tag mr-1"></i>{" "}
-                              {debtor.expname}
-                            </div>
-                          )}
-                        </div>
-                        <div className="text-right">
-                          <span className="text-sm font-bold text-red-600">
-                            {debtor.amount
-                              ? debtor.amount.toFixed(4)
-                              : "0.0000"}{" "}
-                            ETH
-                          </span>
-                          <div className="text-xs text-gray-400">owes</div>
-                        </div>
-                      </div>
-                    </div>
-                  ))
-                )}
+                ))}
               </div>
-            </div>
-
-            {/* NFT Minting Section */}
-            <div className="bg-purple-50 rounded-2xl shadow-xl p-6 border-2 border-purple-200">
-              <h3 className="text-lg font-bold text-purple-700 flex items-center gap-2">
-                <i className="fas fa-crown"></i> Mint NFT Receipt
-                {userNFTs.length > 0 && (
-                  <span className="bg-purple-600 text-white text-xs px-2 py-1 rounded-full">
-                    {userNFTs.length}
-                  </span>
-                )}
-              </h3>
-
-              <div className="mt-3 space-y-3">
-                <div
-                  className="border-2 border-dashed border-purple-300 rounded-lg p-4 text-center cursor-pointer hover:border-purple-500 transition-colors"
-                  onClick={() =>
-                    document.getElementById("nftImageInput").click()
-                  }
-                >
-                  <input
-                    type="file"
-                    id="nftImageInput"
-                    accept="image/*"
-                    className="hidden"
-                    onChange={(e) => {
-                      const file = e.target.files[0];
-                      if (file) {
-                        setNftImageFile(file);
-                        const reader = new FileReader();
-                        reader.onload = (e) => setNftImage(e.target.result);
-                        reader.readAsDataURL(file);
-                      }
-                    }}
-                    disabled={!isConnected || !isCorrectNetwork}
-                  />
-                  {nftImage ? (
-                    <img
-                      src={nftImage}
-                      alt="NFT"
-                      className="w-32 h-32 mx-auto rounded-lg object-cover"
-                    />
-                  ) : (
-                    <div className="py-4">
-                      <i className="fas fa-cloud-upload-alt text-4xl text-purple-400"></i>
-                      <p className="text-sm text-gray-500 mt-2">
-                        Upload receipt image (optional)
-                      </p>
-                    </div>
-                  )}
-                </div>
-
-                <select
-                  className="w-full border rounded-lg p-3 focus:outline-none focus:ring-2 focus:ring-purple-500"
-                  value={selectedExpenseForNFT}
-                  onChange={(e) => setSelectedExpenseForNFT(e.target.value)}
-                  disabled={!isConnected || !isCorrectNetwork}
-                >
-                  <option value="">Select a paid expense for NFT</option>
-                  {expenses
-                    .filter((exp) => exp.status === 1)
-                    .map((exp) => (
-                      <option key={exp.id} value={exp.id}>
-                        {exp.expname} - {exp.amt.toFixed(4)} ETH (
-                        {exp.participantCount} participants)
-                      </option>
-                    ))}
-                </select>
-
-                <button
-                  onClick={mintExpenseNFT}
-                  disabled={
-                    mintingNFT ||
-                    uploading ||
-                    !selectedExpenseForNFT ||
-                    !isConnected ||
-                    !isCorrectNetwork
-                  }
-                  className={`w-full py-3 rounded-xl flex items-center justify-center gap-2 ${
-                    mintingNFT ||
-                    uploading ||
-                    !selectedExpenseForNFT ||
-                    !isConnected ||
-                    !isCorrectNetwork
-                      ? "bg-gray-400 cursor-not-allowed"
-                      : "bg-gradient-to-r from-purple-500 to-pink-500 hover:from-purple-600 hover:to-pink-600"
-                  } text-white font-semibold`}
-                >
-                  {uploading ? (
-                    <>
-                      <i className="fas fa-cloud-upload-alt fa-spin"></i>
-                      Uploading to IPFS...
-                    </>
-                  ) : mintingNFT ? (
-                    <>
-                      <i className="fas fa-spinner fa-spin"></i>
-                      Minting...
-                    </>
-                  ) : (
-                    <>
-                      <i className="fas fa-magic"></i>
-                      Mint NFT
-                    </>
-                  )}
-                </button>
-
-                {userNFTs.length > 0 && (
-                  <div className="text-center text-sm text-purple-600 mt-2">
-                    <i className="fas fa-check-circle mr-1"></i>
-                    You have {userNFTs.length} NFT
-                    {userNFTs.length > 1 ? "s" : ""} in your collection
-                  </div>
-                )}
-              </div>
-            </div>
+            )}
 
             {/* Expenses List */}
             <div className="bg-white rounded-2xl shadow-xl p-6">
               <div className="flex justify-between items-center mb-4">
                 <h2 className="text-xl font-bold text-slate-700">
-                  <i className="fas fa-list text-blue-600"></i> Recent Expenses
-                  {expenses.length > 0 && (
-                    <span className="ml-2 text-sm font-normal text-slate-500">
-                      ({expenses.length} total)
-                    </span>
-                  )}
+                  <i className="fas fa-list text-blue-600"></i> Expenses
                 </h2>
-                <button
-                  onClick={handleRefresh}
-                  disabled={refreshing || !isConnected || !isCorrectNetwork}
-                  className="text-blue-500 hover:text-blue-700 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
-                >
-                  <i
-                    className={`fas fa-sync-alt ${refreshing ? "fa-spin" : ""}`}
-                  ></i>
-                </button>
-              </div>
-              <div className="space-y-3 max-h-80 overflow-y-auto custom-scrollbar">
-                {!isConnected || !isCorrectNetwork ? (
-                  <div className="text-center text-slate-400 py-8">
-                    <i className="fas fa-wallet text-4xl mb-2 block"></i>
-                    <p>Connect to Sepolia to view expenses</p>
-                  </div>
-                ) : expenses.length === 0 ? (
-                  <div className="text-center text-slate-400 py-8">
-                    <i className="fas fa-receipt text-4xl mb-2 block"></i>
-                    <p>No expenses yet</p>
-                    <p className="text-xs mt-1">Add your first expense!</p>
-                  </div>
-                ) : (
-                  expenses.map((exp) => (
-                    <div
-                      key={exp.id}
-                      className={`bg-gray-50 rounded-lg p-3 border mb-2 transition-all hover:shadow-md ${
-                        exp.status === 3
-                          ? "border-red-400 bg-red-50"
-                          : "border-gray-200"
-                      }`}
-                    >
-                      <div className="flex justify-between items-start">
-                        <div>
-                          <div className="font-bold text-slate-800">
-                            {exp.expname}
-                          </div>
-                          <div className="text-xs text-slate-500 mt-0.5">
-                            <i className="fas fa-map-pin mr-1"></i>{" "}
-                            {exp.paddress || "No location"}
-                          </div>
-                          {exp.payerAddress && (
-                            <div className="text-xs text-blue-600 mt-0.5">
-                              <i className="fas fa-user mr-1"></i>
-                              Payer Wallet: {formatAddress(exp.payerAddress)}
-                            </div>
-                          )}
-                        </div>
-                        <span
-                          className={`text-xs px-2 py-1 rounded-full ${
-                            exp.status === 0
-                              ? "bg-yellow-100 text-yellow-700"
-                              : exp.status === 1
-                                ? "bg-green-100 text-green-700"
-                                : exp.status === 2
-                                  ? "bg-red-100 text-red-700"
-                                  : "bg-red-200 text-red-800"
-                          }`}
-                        >
-                          {exp.statusText}
-                        </span>
-                      </div>
-                      <div className="text-sm text-slate-600 mt-1">
-                        💰{" "}
-                        <span className="font-medium">
-                          {exp.amt.toFixed(4)} ETH
-                        </span>
-                        <span className="mx-2">•</span>
-                        👤 Paid by:{" "}
-                        <span className="font-medium">{exp.paidby}</span>
-                        <span className="mx-2">•</span>
-                        👥{" "}
-                        <span className="font-medium">
-                          {exp.participantCount}
-                        </span>{" "}
-                        participants
-                      </div>
-                      <div className="text-xs text-slate-500">
-                        Each owes:{" "}
-                        <span className="font-medium">{exp.shareAmount}</span>{" "}
-                        ETH
-                      </div>
-                      {exp.participantNames &&
-                        exp.participantNames.length > 0 && (
-                          <div className="text-xs text-slate-400 mt-1">
-                            Participants: {exp.participantNames.join(", ")}
-                          </div>
-                        )}
-                      {exp.status === 3 && (
-                        <div className="mt-1 text-xs text-red-600 bg-red-100 p-1 rounded">
-                          <i className="fas fa-exclamation-triangle mr-1"></i>
-                          Bad Debt: Some participants haven't paid their shares
-                        </div>
-                      )}
-
-                      {/* Request Payment Button - Show only for pending expenses and if user is a participant */}
-                      {(exp.status === 0 || exp.status === 3) &&
-                        isConnected && (
-                          <div className="mt-2 flex gap-2 flex-wrap">
-                            {exp.participants &&
-                              exp.participants.includes(walletAddress) && (
-                                <button
-                                  onClick={() =>
-                                    requestPaymentFromPayer(exp.id)
-                                  }
-                                  disabled={loading}
-                                  className="bg-blue-500 hover:bg-blue-600 text-white px-3 py-1 rounded text-xs flex items-center gap-1"
-                                >
-                                  <i className="fas fa-hand-holding-usd"></i>
-                                  Request Payment
-                                </button>
-                              )}
-                            {/* Mark as paid button for payer only */}
-                            {exp.payerAddress &&
-                              exp.payerAddress.toLowerCase() ===
-                                walletAddress.toLowerCase() && (
-                                <div className="flex gap-1 flex-wrap">
-                                  {exp.participants &&
-                                    exp.participants.map((participant, idx) => (
-                                      <button
-                                        key={idx}
-                                        onClick={() =>
-                                          markParticipantPaid(
-                                            exp.id,
-                                            participant,
-                                          )
-                                        }
-                                        disabled={loading}
-                                        className="bg-green-500 hover:bg-green-600 text-white px-2 py-1 rounded text-xs"
-                                      >
-                                        Mark{" "}
-                                        {exp.participantNames[idx] ||
-                                          `P${idx + 1}`}{" "}
-                                        Paid
-                                      </button>
-                                    ))}
-                                </div>
-                              )}
-                          </div>
-                        )}
-                    </div>
-                  ))
+                {refreshing && (
+                  <span className="text-sm text-gray-500">
+                    <i className="fas fa-spinner fa-spin"></i> Refreshing...
+                  </span>
                 )}
               </div>
-            </div>
 
-            {/* How it works */}
-            <div className="bg-blue-50 rounded-2xl p-4 border border-blue-200">
-              <h4 className="font-bold text-blue-800 mb-2 flex items-center gap-2">
-                <i className="fas fa-info-circle"></i> How it works
-              </h4>
-              <ul className="text-xs text-blue-700 space-y-1">
-                <li>1️⃣ Enter expense details (Payer + dynamic participants)</li>
-                <li>2️⃣ Add wallet addresses for each participant</li>
-                <li>3️⃣ Add expense to the blockchain</li>
-                <li>4️⃣ Each person owes an equal share of total amount</li>
-                <li>5️⃣ Select "Bad Debt" to mark someone who didn't pay</li>
-                <li>6️⃣ Participants can request payment from the payer</li>
-                <li>7️⃣ Payer can mark individual participants as paid</li>
-                <li>8️⃣ Mint NFT receipt for paid expenses</li>
-                <li>9️⃣ Click "Import to MetaMask" to view your NFTs</li>
-                <li>⚠️ Make sure you're on Sepolia network!</li>
-              </ul>
+              {!dataLoaded ? (
+                <div className="text-center py-8 text-gray-500">
+                  <i className="fas fa-spinner fa-spin text-3xl mb-2"></i>
+                  <p>Loading expenses...</p>
+                </div>
+              ) : expenses.length === 0 ? (
+                <div className="text-center py-8 text-gray-500">
+                  <i className="fas fa-receipt text-4xl mb-3 text-gray-300"></i>
+                  <p>No expenses yet. Add your first expense!</p>
+                </div>
+              ) : (
+                <div className="space-y-3 max-h-[600px] overflow-y-auto pr-2">
+                  {expenses.map((expense) => (
+                    <div
+                      key={expense.id}
+                      className="border rounded-xl p-4 hover:shadow-md transition-shadow"
+                    >
+                      <div className="flex justify-between items-start">
+                        <div className="flex-1">
+                          <h3 className="font-bold text-slate-800">
+                            {expense.expname}
+                          </h3>
+                          <p className="text-sm text-gray-500">
+                            Paid by: {expense.paidby} (
+                            {formatAddress(expense.payerAddress)})
+                          </p>
+                          <p className="text-sm text-gray-500">
+                            Location: {expense.paddress}
+                          </p>
+                        </div>
+                        <span
+                          className={`px-3 py-1 rounded-full text-xs font-semibold ${
+                            expense.status === 0
+                              ? "bg-yellow-100 text-yellow-700"
+                              : expense.status === 1
+                                ? "bg-green-100 text-green-700"
+                                : expense.status === 2
+                                  ? "bg-red-100 text-red-700"
+                                  : "bg-orange-100 text-orange-700"
+                          }`}
+                        >
+                          {expense.statusText}
+                        </span>
+                      </div>
+
+                      <div className="mt-3 flex justify-between items-center">
+                        <div>
+                          <span className="text-lg font-bold text-slate-800">
+                            {expense.amt.toFixed(4)} ETH
+                          </span>
+                          <span className="text-sm text-gray-500 ml-2">
+                            ({expense.participantCount} participants,{" "}
+                            {expense.shareAmount} ETH each)
+                          </span>
+                        </div>
+                      </div>
+
+                      {/* Participants List */}
+                      {expense.participants.length > 0 && (
+                        <div className="mt-3 border-t pt-3">
+                          <p className="text-xs font-semibold text-gray-500 mb-1">
+                            PARTICIPANTS:
+                          </p>
+                          <div className="space-y-1">
+                            {expense.participants.map((addr, idx) => {
+                              const isUser =
+                                addr.toLowerCase() ===
+                                walletAddress?.toLowerCase();
+                              const isPaid = expense.status === 1;
+                              return (
+                                <div
+                                  key={idx}
+                                  className="flex justify-between items-center text-sm bg-gray-50 p-1.5 rounded"
+                                >
+                                  <div>
+                                    <span className="font-medium">
+                                      {expense.participantNames[idx] ||
+                                        `Participant ${idx + 1}`}
+                                    </span>
+                                    <span className="text-gray-400 ml-2 text-xs">
+                                      {formatAddress(addr)}
+                                    </span>
+                                    {isUser && (
+                                      <span className="ml-2 bg-blue-100 text-blue-600 text-xs px-1.5 py-0.5 rounded">
+                                        You
+                                      </span>
+                                    )}
+                                    {isPaid && (
+                                      <span className="ml-2 bg-green-100 text-green-600 text-xs px-1.5 py-0.5 rounded">
+                                        ✅ Paid
+                                      </span>
+                                    )}
+                                  </div>
+                                  <div className="flex gap-2">
+                                    {/* request payment from payers */}
+                                    {isUser &&
+                                      (expense.status === 0 ||
+                                        expense.status === 3) && (
+                                        <button
+                                          onClick={() =>
+                                            requestPaymentFromPayer(expense.id)
+                                          }
+                                          disabled={loading}
+                                          className="bg-orange-500 hover:bg-orange-600 text-white px-2 py-1 rounded text-xs disabled:opacity-50"
+                                        >
+                                          Request Payer
+                                        </button>
+                                      )}
+                                    {/* ✅ FIX: Mark participant as paid - only for payer and only if not paid */}
+                                    {expense.payerAddress &&
+                                      expense.payerAddress.toLowerCase() ===
+                                        walletAddress?.toLowerCase() &&
+                                      expense.status !== 1 && (
+                                        <button
+                                          onClick={() =>
+                                            markParticipantPaid(
+                                              expense.id,
+                                              addr,
+                                            )
+                                          }
+                                          disabled={loading || !isConnected}
+                                          className="bg-green-500 hover:bg-green-600 text-white px-2 py-1 rounded text-xs disabled:opacity-50"
+                                        >
+                                          Mark Paid
+                                        </button>
+                                      )}
+                                  </div>
+                                </div>
+                              );
+                            })}
+                          </div>
+                        </div>
+                      )}
+                    </div>
+                  ))}
+                </div>
+              )}
             </div>
           </div>
+        </div>
+
+        {/* request payment from the debtors seprately if they want to repay payment to the acctual owner */}
+        <div className="mt-6 bg-white rounded-2xl shadow-xl p-6">
+          <h2 className="text-xl font-bold text-slate-700 mb-4">
+            <i className="fas fa-hand-holding-usd text-yellow-600"></i> Repay
+            Payment to Actual Owner
+          </h2>
+          <p className="text-sm text-gray-500 mb-4">
+            Use this section if you are a debtor and want to create a separate
+            request to repay the actual owner directly.
+          </p>
+          <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
+            <input
+              type="text"
+              placeholder="Actual Owner's Address (0x...)"
+              className="border rounded-lg p-3 focus:outline-none focus:ring-2 focus:ring-yellow-500"
+              value={requestRecipient}
+              onChange={(e) => setRequestRecipient(e.target.value)}
+              disabled={!isConnected || !isCorrectNetwork}
+            />
+            <input
+              type="number"
+              step="0.001"
+              min="0.001"
+              placeholder="Amount (ETH)"
+              className="border rounded-lg p-3 focus:outline-none focus:ring-2 focus:ring-yellow-500"
+              value={requestAmount}
+              onChange={(e) => setRequestAmount(e.target.value)}
+              disabled={!isConnected || !isCorrectNetwork}
+            />
+            <input
+              type="text"
+              placeholder="Reason (e.g. Repaying dinner debt)"
+              className="border rounded-lg p-3 focus:outline-none focus:ring-2 focus:ring-yellow-500"
+              value={requestReason}
+              onChange={(e) => setRequestReason(e.target.value)}
+              disabled={!isConnected || !isCorrectNetwork}
+            />
+            <button
+              onClick={handleRequestPayment}
+              disabled={requestLoading || !isConnected || !isCorrectNetwork}
+              className={`text-white font-semibold py-3 rounded-xl flex items-center justify-center gap-2 transition-all ${
+                requestLoading || !isConnected || !isCorrectNetwork
+                  ? "bg-gray-400 cursor-not-allowed"
+                  : "bg-green-600 hover:bg-green-700"
+              }`}
+            >
+              <i className="fas fa-money-bill-wave"></i>
+              {requestLoading ? "Sending..." : "Pay Owner Now"}
+            </button>
+          </div>
+        </div>
+
+        {/* Pending Payment Requests */}
+        <div className="mt-6 bg-white rounded-2xl shadow-xl p-6">
+          <div className="flex justify-between items-center mb-4">
+            <h2 className="text-xl font-bold text-slate-700">
+              <i className="fas fa-bell text-red-500"></i> Your Pending Payment
+              Requests
+            </h2>
+            <button
+              onClick={() => setShowRequests(!showRequests)}
+              className="text-sm text-blue-600 hover:text-blue-800"
+            >
+              {showRequests ? "Hide" : "Show All Requests"}
+            </button>
+          </div>
+
+          {pendingRequests.length === 0 ? (
+            <p className="text-gray-500 text-center py-4">
+              No pending payment requests for you.
+            </p>
+          ) : (
+            <div className="space-y-3">
+              {pendingRequests.map((req, idx) => (
+                <div
+                  key={idx}
+                  className="border rounded-xl p-4 flex justify-between items-center bg-red-50"
+                >
+                  <div>
+                    <p className="font-semibold text-slate-800">
+                      From: {formatAddress(req.from)}
+                    </p>
+                    <p className="text-sm text-gray-500">
+                      Reason: {req.reason}
+                    </p>
+                    <p className="text-sm text-gray-400">{req.timestamp}</p>
+                  </div>
+                  <div className="text-right flex flex-col items-end gap-2">
+                    <span className="text-lg font-bold text-red-600">
+                      {req.amount} ETH
+                    </span>
+                    <button
+                      onClick={() => payRequest(req.id, req.amount)}
+                      disabled={loading || !isConnected}
+                      className="bg-green-600 hover:bg-green-700 text-white px-4 py-2 rounded-lg text-sm disabled:opacity-50 flex items-center gap-2"
+                    >
+                      <i className="fas fa-money-bill-wave"></i> Pay Now
+                    </button>
+                  </div>
+                </div>
+              ))}
+            </div>
+          )}
+
+          {/* All Requests History */}
+          {showRequests && (
+            <div className="mt-6 border-t pt-4">
+              <h3 className="font-bold text-slate-700 mb-3">
+                All Request History
+              </h3>
+              {allRequests.length === 0 ? (
+                <p className="text-gray-500 text-center py-4">
+                  No requests found.
+                </p>
+              ) : (
+                <div className="space-y-2 max-h-[400px] overflow-y-auto">
+                  {allRequests
+                    .filter(
+                      (req) =>
+                        req.from.toLowerCase() ===
+                          walletAddress?.toLowerCase() ||
+                        req.to.toLowerCase() === walletAddress?.toLowerCase(),
+                    )
+                    .map((req, idx) => (
+                      <div
+                        key={idx}
+                        className={`border rounded-lg p-3 flex justify-between items-center ${req.isPaid ? "bg-gray-50 opacity-75" : "bg-white"}`}
+                      >
+                        <div>
+                          <p className="text-sm font-medium">
+                            {req.from.toLowerCase() ===
+                            walletAddress?.toLowerCase()
+                              ? "You → "
+                              : ""}
+                            {formatAddress(req.from)} → {formatAddress(req.to)}
+                            {req.to.toLowerCase() ===
+                            walletAddress?.toLowerCase()
+                              ? " ← You"
+                              : ""}
+                          </p>
+                          <p className="text-xs text-gray-500">
+                            {req.reason} | {req.timestamp}
+                          </p>
+                        </div>
+                        <div className="text-right">
+                          <p className="font-bold text-sm">{req.amount} ETH</p>
+                          <p
+                            className={`text-xs font-semibold ${req.isPaid ? "text-green-600" : "text-yellow-600"}`}
+                          >
+                            {req.isPaid ? "✅ Paid" : "⏳ Pending"}
+                          </p>
+                          <p className="text-xs text-gray-400 mt-1">
+                            {req.from.toLowerCase() ===
+                            walletAddress?.toLowerCase()
+                              ? "You owe"
+                              : "Owes you"}
+                          </p>
+                        </div>
+                      </div>
+                    ))}
+                </div>
+              )}
+            </div>
+          )}
+        </div>
+
+        {/* NFT Minting Section */}
+        <div className="mt-6 bg-white rounded-2xl shadow-xl p-6">
+          <h2 className="text-xl font-bold text-slate-700 mb-4">
+            <i className="fas fa-cube text-purple-600"></i> Mint Expense NFT
+          </h2>
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+            <div>
+              <label className="text-sm font-semibold text-gray-600 block mb-1">
+                Select Expense
+              </label>
+              <select
+                className="w-full border rounded-lg p-3 focus:outline-none focus:ring-2 focus:ring-purple-500"
+                value={selectedExpenseForNFT}
+                onChange={(e) => setSelectedExpenseForNFT(e.target.value)}
+                disabled={!isConnected || !isCorrectNetwork}
+              >
+                <option value="">Choose an expense...</option>
+                {expenses.map((exp) => (
+                  <option key={exp.id} value={exp.id}>
+                    {exp.expname} - {exp.amt.toFixed(4)} ETH
+                  </option>
+                ))}
+              </select>
+            </div>
+            <div>
+              <label className="text-sm font-semibold text-gray-600 block mb-1">
+                Upload Custom Image (Optional)
+              </label>
+              <input
+                type="file"
+                accept="image/*"
+                onChange={(e) => {
+                  setNftImageFile(e.target.files[0]);
+                  if (e.target.files[0]) {
+                    setNftImage(URL.createObjectURL(e.target.files[0]));
+                  }
+                }}
+                className="w-full border rounded-lg p-2 text-sm"
+                disabled={!isConnected || !isCorrectNetwork}
+              />
+            </div>
+          </div>
+
+          {nftImage && (
+            <div className="mt-4 flex justify-center">
+              <img
+                src={nftImage}
+                alt="NFT Preview"
+                className="w-48 h-48 object-cover rounded-xl border-2 border-purple-300 shadow-md"
+              />
+            </div>
+          )}
+
+          <button
+            onClick={mintExpenseNFT}
+            disabled={
+              mintingNFT ||
+              !isConnected ||
+              !isCorrectNetwork ||
+              !selectedExpenseForNFT
+            }
+            className={`mt-4 w-full text-white font-semibold py-3 rounded-xl flex items-center justify-center gap-2 transition-all ${
+              mintingNFT ||
+              !isConnected ||
+              !isCorrectNetwork ||
+              !selectedExpenseForNFT
+                ? "bg-gray-400 cursor-not-allowed"
+                : "bg-purple-600 hover:bg-purple-700"
+            }`}
+          >
+            <i className="fas fa-magic"></i>
+            {mintingNFT
+              ? uploading
+                ? "Uploading to IPFS..."
+                : "Minting..."
+              : "Mint Expense NFT"}
+          </button>
+        </div>
+
+        {/* NFT Gallery */}
+        {userNFTs.length > 0 && (
+          <div className="mt-6 bg-white rounded-2xl shadow-xl p-6">
+            <h2 className="text-xl font-bold text-slate-700 mb-4">
+              <i className="fas fa-images text-indigo-600"></i> Your NFT Gallery
+            </h2>
+            <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+              {userNFTs.map((nft, idx) => (
+                <div
+                  key={idx}
+                  className="border rounded-xl overflow-hidden hover:shadow-lg transition-shadow"
+                >
+                  <img
+                    src={nft.image}
+                    alt={nft.metadata?.name || "Expense NFT"}
+                    className="w-full h-40 object-cover"
+                  />
+                  <div className="p-3">
+                    <p className="font-bold text-sm text-slate-800 truncate">
+                      {nft.metadata?.name || "Expense NFT"}
+                    </p>
+                    <p className="text-xs text-gray-500">
+                      Token ID: {nft.tokenId}
+                    </p>
+                  </div>
+                </div>
+              ))}
+            </div>
+          </div>
+        )}
+
+        {/* create a reset butoon at the end so that when i click reset it resets the expenses */}
+        <div className="mt-8 mb-12 text-center">
+          <button
+            onClick={resetExpenses}
+            disabled={loading || !isConnected || !isCorrectNetwork}
+            className={`bg-red-600 hover:bg-red-700 text-white font-bold py-4 px-12 rounded-xl text-lg transition-all flex items-center justify-center gap-3 mx-auto ${
+              loading || !isConnected || !isCorrectNetwork
+                ? "bg-gray-400 cursor-not-allowed"
+                : ""
+            }`}
+          >
+            <i className="fas fa-trash-alt"></i>
+            {loading ? "Resetting..." : "⚠️ RESET ALL EXPENSES ⚠️"}
+          </button>
+          <p className="text-sm text-red-500 mt-2">
+            Warning: This will permanently delete all expense data from the
+            contract.
+          </p>
         </div>
       </div>
     </div>
   );
 }
 
-export default App;
+export default ExpenseApp;

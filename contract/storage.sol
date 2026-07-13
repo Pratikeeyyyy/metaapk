@@ -31,21 +31,21 @@ contract Storage {
         uint256 timestamp;
     }
 
-    // ========== STATE VARIABLES ==========
+    // this is state variable
     Expense[] public expenses;
     uint256 public expenseId;
     
     PaymentRequest[] public paymentRequests;
     mapping(address => uint256[]) public pendingRequests;
 
-    // ========== EVENTS ==========
+    // events for whole expenses
     event ExpenseAdded(uint256 indexed id, string expname, uint256 amt, uint8 participantCount);
     event StatusUpdated(uint256 indexed id, Status newStatus);
     event PaymentRequested(uint256 indexed requestId, address indexed from, address indexed to, uint256 amount);
     event PaymentCompleted(uint256 indexed requestId, address indexed from, address indexed to, uint256 amount);
     event ParticipantPaid(uint256 indexed expenseId, address indexed participant, uint256 amount);
 
-    // ========== EXPENSE FUNCTIONS ==========
+    // \this is the function for expense adding
 
     function addExpense(
         string memory _expname,
