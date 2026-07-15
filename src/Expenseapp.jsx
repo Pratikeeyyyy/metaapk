@@ -77,6 +77,7 @@ function ExpenseApp() {
     pending: 0,
     paid: 0,
     received: 0,
+    paymentDue: 0,
   });
 
   // for the seepolia to be used
@@ -263,12 +264,13 @@ function ExpenseApp() {
     [walletAddress],
   );
 
-  // ✅ UPDATED: Calculate summary stats
+  // ✅ UPDATED: Calculate summary stats with Payment Due
   const calculateSummaryStats = useCallback(
     (expenseList) => {
       let pending = 0;
       let paid = 0;
       let received = 0;
+      let paymentDue = 0;
 
       expenseList.forEach((exp) => {
         if (exp.status === 0) {
@@ -284,9 +286,23 @@ function ExpenseApp() {
         ) {
           received++;
         }
+
+        // Check if current user is a participant who owes money (payment due)
+        if (exp.status === 0 || exp.status === 3) {
+          const isParticipant = exp.participants?.some(
+            (addr) => addr.toLowerCase() === walletAddress?.toLowerCase(),
+          );
+          const isPayer =
+            exp.payerAddress?.toLowerCase() === walletAddress?.toLowerCase();
+
+          // User owes money if they're a participant but not the payer
+          if (isParticipant && !isPayer) {
+            paymentDue++;
+          }
+        }
       });
 
-      setSummaryStats({ pending, paid, received });
+      setSummaryStats({ pending, paid, received, paymentDue });
     },
     [walletAddress],
   );
@@ -544,7 +560,7 @@ function ExpenseApp() {
     setNftImageFile(null);
     setSelectedExpenseForNFT("");
     setNftImported(false);
-    setSummaryStats({ pending: 0, paid: 0, received: 0 });
+    setSummaryStats({ pending: 0, paid: 0, received: 0, paymentDue: 0 });
   }, []);
 
   // importing to mmetamask (NFT)
@@ -830,6 +846,60 @@ function ExpenseApp() {
     nftContract,
     loadUserNFTs,
   ]);
+
+  // ✅ NEW: Handle participant paying their share directly
+  const handleParticipantPay = useCallback(
+    async (expenseId, amount) => {
+      if (!signer || !isConnected) {
+        alert("Please connect wallet first");
+        return;
+      }
+
+      // Find the expense to get payer address
+      const expense = expenses.find((e) => e.id === expenseId);
+      if (!expense) {
+        alert("Expense not found");
+        return;
+      }
+
+      try {
+        setLoading(true);
+        const amt = ethers.utils.parseEther(amount.toString());
+
+        // Send payment directly to the payer
+        const tx = await signer.sendTransaction({
+          to: expense.payerAddress,
+          value: amt,
+        });
+        await tx.wait();
+
+        // Mark as paid in the contract
+        const contractTx = await contract.markParticipantPaid(
+          expenseId,
+          walletAddress,
+        );
+        await contractTx.wait();
+
+        await loadExpenses(contract);
+        await loadPaymentRequests(contract);
+        alert("✅ Payment sent successfully!");
+      } catch (error) {
+        console.error("❌ Failed to pay:", error);
+        alert("Failed to pay: " + (error.reason || error.message));
+      } finally {
+        setLoading(false);
+      }
+    },
+    [
+      signer,
+      isConnected,
+      walletAddress,
+      expenses,
+      contract,
+      loadExpenses,
+      loadPaymentRequests,
+    ],
+  );
 
   // ✅ FIX: Mark participant as paid with immediate UI update
   const markParticipantPaid = useCallback(
@@ -1249,9 +1319,9 @@ function ExpenseApp() {
             </span>
           </div>
         </div>
-        {/* ✅ NEW: Summary Cards - Pending, Paid, Received */}
+        {/* ✅ NEW: Summary Cards - Pending, Paid, Received, Payment Due */}
         {isConnected && isCorrectNetwork && (
-          <div className="grid grid-cols-3 gap-4 mb-6">
+          <div className="grid grid-cols-2 md:grid-cols-4 gap-4 mb-6">
             <div className="bg-yellow-50 border border-yellow-200 rounded-xl p-4 text-center">
               <p className="text-yellow-600 text-sm font-medium">⏳ Pending</p>
               <p className="text-2xl font-bold text-yellow-700">
@@ -1268,6 +1338,14 @@ function ExpenseApp() {
               <p className="text-blue-600 text-sm font-medium">💰 Received</p>
               <p className="text-2xl font-bold text-blue-700">
                 {summaryStats.received}
+              </p>
+            </div>
+            <div className="bg-purple-50 border border-purple-200 rounded-xl p-4 text-center">
+              <p className="text-purple-600 text-sm font-medium">
+                💳 Payment Due
+              </p>
+              <p className="text-2xl font-bold text-purple-700">
+                {summaryStats.paymentDue}
               </p>
             </div>
           </div>
@@ -1569,6 +1647,59 @@ function ExpenseApp() {
               </div>
             </div>
 
+            {/* Payment Due Section - Shows expenses where user owes money */}
+            {isConnected && isCorrectNetwork && summaryStats.paymentDue > 0 && (
+              <div className="bg-purple-50 border-2 border-purple-300 rounded-2xl p-4">
+                <h3 className="text-purple-700 font-bold flex items-center gap-2 mb-2">
+                  <i className="fas fa-hand-holding-usd"></i> Payment Due (
+                  {summaryStats.paymentDue})
+                </h3>
+                <p className="text-sm text-purple-600 mb-3">
+                  These are expenses where you need to pay your share
+                </p>
+                {expenses
+                  .filter((exp) => {
+                    const isParticipant = exp.participants?.some(
+                      (addr) =>
+                        addr.toLowerCase() === walletAddress?.toLowerCase(),
+                    );
+                    const isPayer =
+                      exp.payerAddress?.toLowerCase() ===
+                      walletAddress?.toLowerCase();
+                    return (
+                      (exp.status === 0 || exp.status === 3) &&
+                      isParticipant &&
+                      !isPayer
+                    );
+                  })
+                  .map((expense) => (
+                    <div
+                      key={expense.id}
+                      className="bg-white p-3 rounded-lg mb-2 flex justify-between items-center"
+                    >
+                      <div>
+                        <p className="font-semibold text-purple-700">
+                          {expense.expname}
+                        </p>
+                        <p className="text-sm text-gray-600">
+                          Owe: {expense.shareamount.toFixed(4)} ETH to{" "}
+                          {expense.paidby}
+                        </p>
+                      </div>
+                      <button
+                        onClick={() =>
+                          handleParticipantPay(expense.id, expense.shareamount)
+                        }
+                        disabled={loading}
+                        className="bg-green-600 hover:bg-green-700 text-white px-4 py-2 rounded-lg text-sm disabled:opacity-50 flex items-center gap-2"
+                      >
+                        <i className="fas fa-money-bill-wave"></i> Pay Now
+                      </button>
+                    </div>
+                  ))}
+              </div>
+            )}
+
             {/* Bad Debtors Warning */}
             {badDebtors.length > 0 && (
               <div className="bg-red-50 border-2 border-red-300 rounded-2xl p-4">
@@ -1719,18 +1850,22 @@ function ExpenseApp() {
                                     )}
                                   </div>
                                   <div className="flex gap-2">
-                                    {/* request payment from payers */}
+                                    {/* Pay Now button for participants */}
                                     {isUser &&
                                       (expense.status === 0 ||
                                         expense.status === 3) && (
                                         <button
                                           onClick={() =>
-                                            requestPaymentFromPayer(expense.id)
+                                            handleParticipantPay(
+                                              expense.id,
+                                              expense.shareamount,
+                                            )
                                           }
                                           disabled={loading}
-                                          className="bg-orange-500 hover:bg-orange-600 text-white px-2 py-1 rounded text-xs disabled:opacity-50"
+                                          className="bg-green-500 hover:bg-green-600 text-white px-2 py-1 rounded text-xs disabled:opacity-50"
                                         >
-                                          Request Payer
+                                          <i className="fas fa-money-bill-wave mr-1"></i>{" "}
+                                          Pay Now
                                         </button>
                                       )}
                                     {/* ✅ FIX: Mark participant as paid - only for payer and only if not paid */}
