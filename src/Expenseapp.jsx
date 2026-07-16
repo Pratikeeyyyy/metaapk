@@ -72,7 +72,7 @@ function ExpenseApp() {
   const [mintingNFT, setMintingNFT] = useState(false);
   const [nftImported, setNftImported] = useState(false);
 
-  // ✅ NEW: Summary stats for dashboard
+  //status for pay status with add of payment due (that is to pay to other)
   const [summaryStats, setSummaryStats] = useState({
     pending: 0,
     paid: 0,
@@ -135,7 +135,7 @@ function ExpenseApp() {
     }
   }, []);
 
-  // ✅ NEW: Upload file using Pinata
+  // from here Uploading file using Pinata
   const uploadToPinata = useCallback(async (file) => {
     try {
       const formData = new FormData();
@@ -159,15 +159,15 @@ function ExpenseApp() {
 
       const data = await response.json();
       const url = `https://gateway.pinata.cloud/ipfs/${data.IpfsHash}`;
-      console.log("✅ File uploaded to Pinata:", url);
+      console.log("Congratulation! File uploaded to Pinata:", url);
       return url;
     } catch (error) {
-      console.error("❌ Upload to Pinata failed:", error);
+      console.error("Sorry Upload to Pinata failed:", error);
       return PLACEHOLDER_IMAGE;
     }
   }, []);
 
-  // ✅ NEW: Upload metadata using Pinata
+  //storing on inata
   const uploadMetadataToPinata = useCallback(async (metadata) => {
     try {
       const response = await fetch(
@@ -181,19 +181,17 @@ function ExpenseApp() {
           body: JSON.stringify(metadata),
         },
       );
-
       if (!response.ok) {
         const errorData = await response.json();
         throw new Error(errorData.error || "Metadata upload failed");
       }
-
       const data = await response.json();
       const url = `https://gateway.pinata.cloud/ipfs/${data.IpfsHash}`;
       console.log("✅ Metadata uploaded to Pinata:", url);
       return url;
     } catch (error) {
       console.error("❌ Metadata upload failed:", error);
-      return PLACEHOLDER_IMAGE;
+      throw error;
     }
   }, []);
 
@@ -264,7 +262,7 @@ function ExpenseApp() {
     [walletAddress],
   );
 
-  // ✅ UPDATED: Calculate summary stats with Payment Due
+  //  Calculate summary stats wfor Payment Due (that i have to pay)
   const calculateSummaryStats = useCallback(
     (expenseList) => {
       let pending = 0;
@@ -278,7 +276,6 @@ function ExpenseApp() {
         } else if (exp.status === 1) {
           paid++;
         }
-
         // Check if current user is the payer (received payments)
         if (
           exp.payerAddress &&
@@ -598,12 +595,12 @@ function ExpenseApp() {
         alert("❌ User rejected the request");
       }
     } catch (error) {
-      console.error("Failed to import NFT:", error);
-      alert("Failed to import NFT: " + error.message);
+      console.error("T:", error);
+      alert("/̸̅̅ ̆̅ ̅̅ ̅̅  Failed to import NFT: " + error.message);
     }
   }, [userNFTs, nftImported]);
 
-  // ✅ UPDATED: minting the nft with Pinata
+  // minting the nft with Pinata
   const mintExpenseNFT = useCallback(async () => {
     if (!nftContract || !isConnected) {
       alert("Please connect wallet first");
@@ -623,22 +620,26 @@ function ExpenseApp() {
         alert("Expense not found");
         return;
       }
+
+      // Always try to upload image, but handle failure gracefully
       let imageUrl = PLACEHOLDER_IMAGE;
       if (nftImageFile) {
         try {
           imageUrl = await uploadToPinata(nftImageFile);
           console.log("✅ Image uploaded to Pinata:", imageUrl);
         } catch (uploadError) {
-          console.error("Image upload failed, using placeholder:", uploadError);
-          imageUrl = PLACEHOLDER_IMAGE;
+          console.error("Image upload failed:", uploadError);
         }
+      } else {
       }
+
       let participantList = "";
       if (expense.participantNames && expense.participantNames.length > 0) {
         participantList = expense.participantNames.join(", ");
       } else {
         participantList = `${expense.participantCount} participants`;
       }
+
       const metadata = {
         name: `Expense: ${expense.expname}`,
         description: `${expense.paidby} paid ${expense.amt.toFixed(4)} ETH for ${expense.expname}. Shared with ${expense.participantCount} participants: ${participantList}.`,
@@ -652,18 +653,23 @@ function ExpenseApp() {
           { trait_type: "Date", value: new Date().toLocaleDateString() },
         ],
       };
-      let metadataUrl = PLACEHOLDER_IMAGE;
+
+      let metadataUrl;
       try {
         metadataUrl = await uploadMetadataToPinata(metadata);
         console.log("✅ Metadata uploaded to Pinata:", metadataUrl);
       } catch (uploadError) {
-        console.error(
-          "Metadata upload failed, using placeholder:",
-          uploadError,
+        console.error("Metadata upload failed:", uploadError);
+        alert(
+          "❌ Failed to upload metadata. Please check your Pinata JWT and try again.",
         );
-        metadataUrl = PLACEHOLDER_IMAGE;
+        throw new Error("Metadata upload failed");
       }
       setUploading(false);
+      if (!metadataUrl || metadataUrl.startsWith("data:image")) {
+        alert("❌ Invalid metadata URL. Please try again with a valid image.");
+        throw new Error("Invalid metadata URL");
+      }
       const tx = await nftContract.mintExpenseNFT(
         walletAddress,
         metadataUrl,
@@ -695,7 +701,7 @@ function ExpenseApp() {
     uploadMetadataToPinata,
   ]);
 
-  // ===== GET CONTRACT BALANCE =====
+  // for getting the contract baalance
   const getContractBalance = useCallback(async (providerInstance) => {
     if (!providerInstance) return;
     try {
