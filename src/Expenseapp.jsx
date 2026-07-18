@@ -138,6 +138,13 @@ function ExpenseApp() {
   // from here Uploading file using Pinata
   const uploadToPinata = useCallback(async (file) => {
     try {
+      const jwt = import.meta.env.VITE_PINATA_JWT;
+
+      if (!jwt) {
+        console.error("❌ Pinata JWT is missing! Check your .env file");
+        return PLACEHOLDER_IMAGE;
+      }
+
       const formData = new FormData();
       formData.append("file", file);
 
@@ -146,7 +153,7 @@ function ExpenseApp() {
         {
           method: "POST",
           headers: {
-            Authorization: `Bearer ${process.env.REACT_APP_PINATA_JWT}`,
+            Authorization: `Bearer ${jwt}`,
           },
           body: formData,
         },
@@ -154,6 +161,7 @@ function ExpenseApp() {
 
       if (!response.ok) {
         const errorData = await response.json();
+        console.error("Pinata Upload Error:", errorData);
         throw new Error(errorData.error || "Upload failed");
       }
 
@@ -170,21 +178,40 @@ function ExpenseApp() {
   //storing on inata
   const uploadMetadataToPinata = useCallback(async (metadata) => {
     try {
+      const jwt = import.meta.env.VITE_PINATA_JWT;
+
+      if (!jwt) {
+        console.error("❌ Pinata JWT is missing! Check your .env file");
+        throw new Error(
+          "Pinata JWT is missing. Please add VITE_PINATA_JWT to your .env file",
+        );
+      }
+
       const response = await fetch(
         "https://api.pinata.cloud/pinning/pinJSONToIPFS",
         {
           method: "POST",
           headers: {
             "Content-Type": "application/json",
-            Authorization: `Bearer ${process.env.REACT_APP_PINATA_JWT}`,
+            Authorization: `Bearer ${jwt}`,
           },
           body: JSON.stringify(metadata),
         },
       );
+
       if (!response.ok) {
         const errorData = await response.json();
-        throw new Error(errorData.error || "Metadata upload failed");
+        console.error("Pinata Error Response:", errorData);
+
+        if (response.status === 401 || response.status === 403) {
+          throw new Error(
+            "Invalid Pinata JWT. Please check your token and permissions.",
+          );
+        } else {
+          throw new Error(errorData.error || "Metadata upload failed");
+        }
       }
+
       const data = await response.json();
       const url = `https://gateway.pinata.cloud/ipfs/${data.IpfsHash}`;
       console.log("✅ Metadata uploaded to Pinata:", url);
@@ -560,7 +587,7 @@ function ExpenseApp() {
     setSummaryStats({ pending: 0, paid: 0, received: 0, paymentDue: 0 });
   }, []);
 
-  // importing to mmetamask (NFT)
+  // importing to mmetamask (NFT) - only imports the first NFT once
   const importNFTToMetaMask = useCallback(async () => {
     if (!window.ethereum) {
       alert("Please install MetaMask");
@@ -595,8 +622,13 @@ function ExpenseApp() {
         alert("❌ User rejected the request");
       }
     } catch (error) {
-      console.error("T:", error);
-      alert("/̸̅̅ ̆̅ ̅̅ ̅̅  Failed to import NFT: " + error.message);
+      console.error("Failed to import NFT:", error);
+      if (error.message.includes("already been added")) {
+        alert("ℹ️ This NFT is already in your MetaMask wallet!");
+        setNftImported(true);
+      } else {
+        alert("Failed to import NFT: " + error.message);
+      }
     }
   }, [userNFTs, nftImported]);
 
@@ -621,6 +653,30 @@ function ExpenseApp() {
         return;
       }
 
+      // ✅ FIX: Only the actual owner (payer) can mint the NFT
+      const isPayer =
+        expense.payerAddress?.toLowerCase() === walletAddress?.toLowerCase();
+
+      if (!isPayer) {
+        alert(
+          "❌ Only the actual owner (payer) who added this expense can mint the NFT.",
+        );
+        setMintingNFT(false);
+        setUploading(false);
+        return;
+      }
+
+      // ✅ FIX: NFT contract requires the expense to be PAID (status 1)
+      // The NFT is a receipt, so you can only mint after the expense is paid
+      if (expense.status !== 1) {
+        alert(
+          "⚠️ You can only mint an NFT receipt after the expense is fully PAID. Please mark all participants as paid first.",
+        );
+        setMintingNFT(false);
+        setUploading(false);
+        return;
+      }
+
       // Always try to upload image, but handle failure gracefully
       let imageUrl = PLACEHOLDER_IMAGE;
       if (nftImageFile) {
@@ -629,8 +685,10 @@ function ExpenseApp() {
           console.log("✅ Image uploaded to Pinata:", imageUrl);
         } catch (uploadError) {
           console.error("Image upload failed:", uploadError);
+          imageUrl = "ipfs://QmPlaceholder123456789";
         }
       } else {
+        imageUrl = "ipfs://QmPlaceholder123456789";
       }
 
       let participantList = "";
@@ -661,15 +719,24 @@ function ExpenseApp() {
       } catch (uploadError) {
         console.error("Metadata upload failed:", uploadError);
         alert(
-          "❌ Failed to upload metadata. Please check your Pinata JWT and try again.",
+          "❌ Failed to upload metadata. Please check your Pinata JWT in .env file and try again.",
         );
         throw new Error("Metadata upload failed");
       }
       setUploading(false);
+
       if (!metadataUrl || metadataUrl.startsWith("data:image")) {
         alert("❌ Invalid metadata URL. Please try again with a valid image.");
         throw new Error("Invalid metadata URL");
       }
+
+      console.log("📝 Minting NFT with params:", {
+        to: walletAddress,
+        metadataUrl: metadataUrl,
+        expenseId: expense.id,
+        expname: expense.expname,
+      });
+
       const tx = await nftContract.mintExpenseNFT(
         walletAddress,
         metadataUrl,
@@ -684,7 +751,21 @@ function ExpenseApp() {
       await loadUserNFTs(nftContract);
     } catch (error) {
       console.error("Failed to mint NFT:", error);
-      alert("Failed to mint NFT: " + (error.reason || error.message));
+      // Better error message
+      let errorMsg = error.reason || error.message;
+      if (errorMsg.includes("execution reverted")) {
+        if (errorMsg.includes("0x118cdaa7")) {
+          alert(
+            "❌ The NFT contract rejected this transaction. Please make sure:\n1. You are the actual owner (payer) of this expense\n2. The expense is fully PAID (all participants marked as paid)\n3. You haven't minted this expense before",
+          );
+        } else {
+          alert(
+            "❌ The contract rejected this transaction. Please make sure:\n1. You are the actual owner (payer) of this expense\n2. The expense is fully PAID\n3. You haven't minted this expense before",
+          );
+        }
+      } else {
+        alert("Failed to mint NFT: " + errorMsg);
+      }
     } finally {
       setMintingNFT(false);
       setUploading(false);
@@ -2090,11 +2171,19 @@ function ExpenseApp() {
                 disabled={!isConnected || !isCorrectNetwork}
               >
                 <option value="">Choose an expense...</option>
-                {expenses.map((exp) => (
-                  <option key={exp.id} value={exp.id}>
-                    {exp.expname} - {exp.amt.toFixed(4)} ETH
-                  </option>
-                ))}
+                {expenses
+                  .filter((exp) => {
+                    // Only show expenses where connected wallet is the payer AND expense is fully PAID
+                    const isPayer =
+                      exp.payerAddress?.toLowerCase() ===
+                      walletAddress?.toLowerCase();
+                    return isPayer && exp.status === 1;
+                  })
+                  .map((exp) => (
+                    <option key={exp.id} value={exp.id}>
+                      {exp.expname} - {exp.amt.toFixed(4)} ETH ✅ Paid
+                    </option>
+                  ))}
               </select>
             </div>
             <div>
