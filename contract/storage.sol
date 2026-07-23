@@ -31,7 +31,7 @@ contract Storage {
         uint256 timestamp;
     }
 
-    // this is state variable
+    // this is for state variable
     Expense[] public expenses;
     uint256 public expenseId;
     
@@ -80,7 +80,7 @@ contract Storage {
     //     expenseId++;
     // }
 
-    // Modified function with event
+    // event funnction
     event ExpenseAdded(uint256 indexed id, string expname, uint256 amt, uint8 participantCount);
     function addExpense(
         string memory _expname,
@@ -150,8 +150,8 @@ contract Storage {
         require(_id < expenses.length, "Expense not found");
         return (expenses[_id].participants, expenses[_id].participantNames);
     }
-    
-    // Actual function (commented - original markParticipantPaid function without event)
+
+
     // function markParticipantPaid(uint256 _id, address _participant) public {
     //     require(_id < expenses.length, "Expense not found");
     //     Expense storage exp = expenses[_id];
@@ -182,7 +182,7 @@ contract Storage {
     //     }
     // }
 
-    // Modified function with event
+    //  event funtion
     event ParticipantPaid(uint256 indexed expenseId, address indexed participant, uint256 amount);
     function markParticipantPaid(uint256 _id, address _participant) public {
         require(_id < expenses.length, "Expense not found");
@@ -238,7 +238,7 @@ contract Storage {
         return badDebtors;
     }
 
-    // Actual function (commented - original requestPaymentFromPayer function without event)
+
     // function requestPaymentFromPayer(uint256 _expenseId) public {
     //     require(_expenseId < expenses.length, "Expense not found");
     //     Expense storage exp = expenses[_expenseId];
@@ -267,7 +267,7 @@ contract Storage {
     //     pendingRequests[exp.payerAddress].push(requestId);
     // }
 
-    // Modified function with event
+    //  event emit fucntionn
     function requestPaymentFromPayer(uint256 _expenseId) public {
         require(_expenseId < expenses.length, "Expense not found");
         Expense storage exp = expenses[_expenseId];
@@ -301,7 +301,7 @@ contract Storage {
         return expenses.length;
     }
 
-    // Actual function (commented - original view function)
+//added emit function
     // function getStatus() public view returns (string memory) {
     //     require(expenses.length > 0, "No expenses found");
     //     Status currentStatus = expenses[expenses.length - 1].status;
@@ -330,26 +330,24 @@ contract Storage {
         }
     }
 
-    // Actual function (commented - original view function)
     // function getShareAmount() public view returns (uint256) {
     //     require(expenses.length > 0, "No expenses found");
     //     return expenses[expenses.length - 1].shareamount;
     // }
     
-    // Modified emit function
+    // emit function
     event sharedAmt(uint256 amount);
     function getShareAmount() public {
         require(expenses.length > 0, "No Expense Found");
         emit sharedAmt(expenses[expenses.length - 1].shareamount);
     }
 
-    // Actual function (commented - original updateStatus function without event)
     // function updateStatus(Status _newStatus) public {
     //     require(expenses.length > 0, "No expenses found");
     //     expenses[expenses.length - 1].status = _newStatus;
     // }
 
-    // Modified function with event
+    //  event fucntion
     function updateStatus(Status _newStatus) public {
         require(expenses.length > 0, "No expenses found");
         expenses[expenses.length - 1].status = _newStatus;
@@ -361,7 +359,6 @@ contract Storage {
         expenseId = 0;
     }
 
-    // Actual function (commented - original requestPayment function without event)
     // function requestPayment(address to, uint256 amount, string memory reason) public returns (uint256) {
     //     require(to != address(0), "Invalid address");
     //     require(amount > 0, "Amount must be > 0");
@@ -382,7 +379,7 @@ contract Storage {
     //     return requestId;
     // }
 
-    // Modified function with event
+    //  event fucntion
     function requestPayment(address to, uint256 amount, string memory reason) public returns (uint256) {
         require(to != address(0), "Invalid address");
         require(amount > 0, "Amount must be > 0");
@@ -404,7 +401,6 @@ contract Storage {
         return requestId;
     }
 
-    // Actual function (commented - original payRequest function without event)
     // function payRequest(uint256 requestId) public payable {
     //     require(requestId < paymentRequests.length, "Request does not exist");
     //     PaymentRequest storage request = paymentRequests[requestId];
@@ -426,7 +422,7 @@ contract Storage {
     //     }
     // }
 
-    // Modified function with event
+    // event fucntion
     function payRequest(uint256 requestId) public payable {
         require(requestId < paymentRequests.length, "Request does not exist");
         PaymentRequest storage request = paymentRequests[requestId];
