@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { useAuth } from '../context/AuthContext';
-import { useNavigate } from 'react-router-dom';
+import { useNavigate, Link } from 'react-router-dom';
 
 const Register = () => {
   const [name, setName] = useState('');
@@ -44,6 +44,7 @@ const Register = () => {
       const result = register(email, password, name);
       if (result.success) {
         setSuccess(result.message);
+
         // Redirect to home after 1.5 seconds
         setTimeout(() => {
           navigate('/');
@@ -136,9 +137,12 @@ const Register = () => {
         <div className="mt-6 text-center">
           <p className="text-gray-600">
             Already have an account?{' '}
-            <a href="/login" className="text-blue-600 font-semibold hover:underline">
+            <Link
+              to="/login"
+              className="text-blue-600 font-semibold hover:underline"
+            >
               Sign In
-            </a>
+            </Link>
           </p>
         </div>
       </div>

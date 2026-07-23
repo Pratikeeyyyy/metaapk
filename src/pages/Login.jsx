@@ -1,11 +1,11 @@
-import React, { useState, useEffect } from 'react';
-import { useAuth } from '../context/AuthContext';
-import { useNavigate } from 'react-router-dom';
+import React, { useState, useEffect } from "react";
+import { useAuth } from "../context/AuthContext";
+import { useNavigate, Link } from "react-router-dom";
 
 const Login = () => {
-  const [email, setEmail] = useState('');
-  const [password, setPassword] = useState('');
-  const [error, setError] = useState('');
+  const [email, setEmail] = useState("");
+  const [password, setPassword] = useState("");
+  const [error, setError] = useState("");
   const [loading, setLoading] = useState(false);
   const { login, user } = useAuth();
   const navigate = useNavigate();
@@ -13,13 +13,13 @@ const Login = () => {
   // If user is already logged in, redirect to home
   useEffect(() => {
     if (user) {
-      navigate('/');
+      navigate("/");
     }
   }, [user, navigate]);
 
   const handleSubmit = async (e) => {
     e.preventDefault();
-    setError('');
+    setError("");
     setLoading(true);
 
     // Simulate API call
@@ -27,7 +27,7 @@ const Login = () => {
       const result = login(email, password);
       if (result.success) {
         // Redirect to home
-        navigate('/');
+        navigate("/");
       } else {
         setError(result.message);
       }
@@ -51,7 +51,9 @@ const Login = () => {
 
         <form onSubmit={handleSubmit} className="space-y-6">
           <div>
-            <label className="block text-gray-700 font-medium mb-2">Email</label>
+            <label className="block text-gray-700 font-medium mb-2">
+              Email
+            </label>
             <input
               type="email"
               value={email}
@@ -63,7 +65,9 @@ const Login = () => {
           </div>
 
           <div>
-            <label className="block text-gray-700 font-medium mb-2">Password</label>
+            <label className="block text-gray-700 font-medium mb-2">
+              Password
+            </label>
             <input
               type="password"
               value={password}
@@ -79,16 +83,19 @@ const Login = () => {
             disabled={loading}
             className="w-full bg-gradient-to-r from-blue-500 to-purple-600 text-white py-3 rounded-lg font-semibold hover:opacity-90 transition disabled:opacity-50"
           >
-            {loading ? 'Signing in...' : 'Sign In'}
+            {loading ? "Signing in..." : "Sign In"}
           </button>
         </form>
 
         <div className="mt-6 text-center">
           <p className="text-gray-600">
-            Don't have an account?{' '}
-            <a href="/register" className="text-blue-600 font-semibold hover:underline">
+            Don't have an account?{" "}
+            <Link
+              to="/register"
+              className="text-blue-600 font-semibold hover:underline"
+            >
               Register
-            </a>
+            </Link>
           </p>
         </div>
       </div>
