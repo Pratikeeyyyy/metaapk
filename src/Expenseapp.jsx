@@ -4,8 +4,8 @@ import { contractABI } from "./abi";
 import { nftABI } from "./NftABI";
 
 // sepolia and nft contract address
-const CONTRACT_ADDRESS = "0x5e8013685a6fd02D54C500A8cDaf200Cf46cF7a0";
-const NFT_CONTRACT_ADDRESS = "0xB8B77bDfFb937714493eFB7F94801A07AA1e1a8a";
+const CONTRACT_ADDRESS = "0x06845C21706598F56d6dBf2Fca6D70254F8893aF";
+const NFT_CONTRACT_ADDRESS = "0xB95A35Fc2BCDc878A2F70241588eF5a0542d1ae8";
 const SEPOLIA_CHAIN_ID = "0xaa36a7";
 
 // image for the nft
@@ -2272,7 +2272,6 @@ function ExpenseApp() {
           </div>
         )}
 
-        {/* create a reset butoon at the end so that when i click reset it resets the expenses */}
         <div className="mt-8 mb-12 text-center">
           <button
             onClick={resetExpenses}

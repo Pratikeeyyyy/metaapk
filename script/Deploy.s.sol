@@ -3,7 +3,7 @@ pragma solidity ^0.8.13;
 
 import "forge-std/Script.sol";
 // Fix: Use correct relative path
-import "../contract/Storage.sol";
+import "../contract/storage.sol";
 
 contract DeployStorage is Script {
     function run() external {

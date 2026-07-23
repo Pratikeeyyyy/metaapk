@@ -4,9 +4,9 @@ pragma solidity ^0.8.13;
 contract Storage {
     enum Status {
         pending,   // 0 index
-        paid,      // 1ined
-        rejected,  // 2index
-        badDebt    // 3index
+        paid,      // 1 index
+        rejected,  // 2 index
+        badDebt    // 3 index
     }
 
     struct Expense {
@@ -38,15 +38,50 @@ contract Storage {
     PaymentRequest[] public paymentRequests;
     mapping(address => uint256[]) public pendingRequests;
 
-    // events for whole expenses
-    event ExpenseAdded(uint256 indexed id, string expname, uint256 amt, uint8 participantCount);
     event StatusUpdated(uint256 indexed id, Status newStatus);
     event PaymentRequested(uint256 indexed requestId, address indexed from, address indexed to, uint256 amount);
     event PaymentCompleted(uint256 indexed requestId, address indexed from, address indexed to, uint256 amount);
-    event ParticipantPaid(uint256 indexed expenseId, address indexed participant, uint256 amount);
 
-    // \this is the function for expense adding
+    // Actual function (commented - original addExpense function without event)
+    // function addExpense(
+    //     string memory _expname,
+    //     string memory _paidby,
+    //     address _payerAddress,
+    //     address[] memory _participants,
+    //     string[] memory _participantNames,
+    //     string memory _paddress,
+    //     uint256 _amt,
+    //     Status _status
+    // ) public {
+    //     require(_participants.length > 0, "Need at least one participant");
+    //     require(_participants.length == _participantNames.length, "Arrays length mismatch");
+    //     require(_payerAddress != address(0), "Invalid payer address");
+    //     
+    //     for (uint i = 0; i < _participants.length; i++) {
+    //         require(_participants[i] != address(0), "Invalid participant address");
+    //     }
+    //     
+    //     uint256 shareAmount = _amt / (_participants.length + 1);
+    //     
+    //     Expense storage newExpense = expenses.push();
+    //     newExpense.expname = _expname;
+    //     newExpense.paidby = _paidby;
+    //     newExpense.payerAddress = _payerAddress;
+    //     newExpense.paddress = _paddress;
+    //     newExpense.amt = _amt;
+    //     newExpense.shareamount = shareAmount;
+    //     newExpense.status = _status;
+    //     
+    //     for (uint i = 0; i < _participants.length; i++) {
+    //         newExpense.participants.push(_participants[i]);
+    //         newExpense.participantNames.push(_participantNames[i]);
+    //     }
+    //     
+    //     expenseId++;
+    // }
 
+    // Modified function with event
+    event ExpenseAdded(uint256 indexed id, string expname, uint256 amt, uint8 participantCount);
     function addExpense(
         string memory _expname,
         string memory _paidby,
@@ -111,11 +146,44 @@ contract Storage {
         );
     }
 
-    function getParticipants(uint256 _id) public view returns (address[] memory, string[] memory) {
+    function getPrticipants(uint256 _id) public view returns (address[] memory, string[] memory) {
         require(_id < expenses.length, "Expense not found");
         return (expenses[_id].participants, expenses[_id].participantNames);
     }
+    
+    // Actual function (commented - original markParticipantPaid function without event)
+    // function markParticipantPaid(uint256 _id, address _participant) public {
+    //     require(_id < expenses.length, "Expense not found");
+    //     Expense storage exp = expenses[_id];
+    //     require(exp.status == Status.pending || exp.status == Status.badDebt, "Expense not pending");
+    //     
+    //     bool found = false;
+    //     for (uint i = 0; i < exp.participants.length; i++) {
+    //         if (exp.participants[i] == _participant) {
+    //             found = true;
+    //             break;
+    //         }
+    //     }
+    //     require(found, "Participant not in this expense");
+    //     require(!exp.hasPaid[_participant], "Already paid");
+    //     
+    //     exp.hasPaid[_participant] = true;
+    //     
+    //     bool allPaid = true;
+    //     for (uint i = 0; i < exp.participants.length; i++) {
+    //         if (!exp.hasPaid[exp.participants[i]]) {
+    //             allPaid = false;
+    //             break;
+    //         }
+    //     }
+    //     
+    //     if (allPaid && exp.status == Status.pending) {
+    //         exp.status = Status.paid;
+    //     }
+    // }
 
+    // Modified function with event
+    event ParticipantPaid(uint256 indexed expenseId, address indexed participant, uint256 amount);
     function markParticipantPaid(uint256 _id, address _participant) public {
         require(_id < expenses.length, "Expense not found");
         Expense storage exp = expenses[_id];
@@ -170,6 +238,36 @@ contract Storage {
         return badDebtors;
     }
 
+    // Actual function (commented - original requestPaymentFromPayer function without event)
+    // function requestPaymentFromPayer(uint256 _expenseId) public {
+    //     require(_expenseId < expenses.length, "Expense not found");
+    //     Expense storage exp = expenses[_expenseId];
+    //     
+    //     bool isParticipant = false;
+    //     for (uint i = 0; i < exp.participants.length; i++) {
+    //         if (exp.participants[i] == msg.sender) {
+    //             isParticipant = true;
+    //             break;
+    //         }
+    //     }
+    //     require(isParticipant, "Not a participant");
+    //     require(!exp.hasPaid[msg.sender], "Already paid");
+    //     require(exp.status != Status.paid, "Expense already paid");
+    //     
+    //     paymentRequests.push(PaymentRequest({
+    //         from: msg.sender,
+    //         to: exp.payerAddress,
+    //         amount: exp.shareamount,
+    //         reason: string(abi.encodePacked("Payment for: ", exp.expname)),
+    //         isPaid: false,
+    //         timestamp: block.timestamp
+    //     }));
+    //     
+    //     uint256 requestId = paymentRequests.length - 1;
+    //     pendingRequests[exp.payerAddress].push(requestId);
+    // }
+
+    // Modified function with event
     function requestPaymentFromPayer(uint256 _expenseId) public {
         require(_expenseId < expenses.length, "Expense not found");
         Expense storage exp = expenses[_expenseId];
@@ -203,21 +301,55 @@ contract Storage {
         return expenses.length;
     }
 
-    function getStatus() public view returns (string memory) {
-        require(expenses.length > 0, "No expenses found");
-        Status currentStatus = expenses[expenses.length - 1].status;
-        if (currentStatus == Status.pending) return "your expense is pending";
-        else if (currentStatus == Status.paid) return "your expense is paid";
-        else if (currentStatus == Status.rejected) return "your expense is rejected";
-        else if (currentStatus == Status.badDebt) return "your expense is bad debt";
-        return "Unknown status";
+    // Actual function (commented - original view function)
+    // function getStatus() public view returns (string memory) {
+    //     require(expenses.length > 0, "No expenses found");
+    //     Status currentStatus = expenses[expenses.length - 1].status;
+    //     if (currentStatus == Status.pending) return "your expense is pending";
+    //     else if (currentStatus == Status.paid) return "your expense is paid";
+    //     else if (currentStatus == Status.rejected) return "your expense is rejected";
+    //     else if (currentStatus == Status.badDebt) return "your expense is bad debt";
+    //     return "Unknown status";
+    // }
+    
+    // Modified emit function
+    event Pending();
+    event Paid();
+    event Reject();
+    event Baddebt();
+    function getStatus(Status _status) public {
+        expenses[expenses.length - 1].status = _status;
+        if (_status == Status.pending) {
+            emit Pending();
+        } else if (_status == Status.paid) {
+            emit Paid();
+        } else if (_status == Status.rejected) {
+            emit Reject();
+        } else if (_status == Status.badDebt) {
+            emit Baddebt();
+        }
     }
 
-    function getShareAmount() public view returns (uint256) {
-        require(expenses.length > 0, "No expenses found");
-        return expenses[expenses.length - 1].shareamount;
+    // Actual function (commented - original view function)
+    // function getShareAmount() public view returns (uint256) {
+    //     require(expenses.length > 0, "No expenses found");
+    //     return expenses[expenses.length - 1].shareamount;
+    // }
+    
+    // Modified emit function
+    event sharedAmt(uint256 amount);
+    function getShareAmount() public {
+        require(expenses.length > 0, "No Expense Found");
+        emit sharedAmt(expenses[expenses.length - 1].shareamount);
     }
 
+    // Actual function (commented - original updateStatus function without event)
+    // function updateStatus(Status _newStatus) public {
+    //     require(expenses.length > 0, "No expenses found");
+    //     expenses[expenses.length - 1].status = _newStatus;
+    // }
+
+    // Modified function with event
     function updateStatus(Status _newStatus) public {
         require(expenses.length > 0, "No expenses found");
         expenses[expenses.length - 1].status = _newStatus;
@@ -229,7 +361,28 @@ contract Storage {
         expenseId = 0;
     }
 
+    // Actual function (commented - original requestPayment function without event)
+    // function requestPayment(address to, uint256 amount, string memory reason) public returns (uint256) {
+    //     require(to != address(0), "Invalid address");
+    //     require(amount > 0, "Amount must be > 0");
+    //     require(to != msg.sender, "Cannot request from yourself");
+    // 
+    //     paymentRequests.push(PaymentRequest({
+    //         from: msg.sender,
+    //         to: to,
+    //         amount: amount,
+    //         reason: reason,
+    //         isPaid: false,
+    //         timestamp: block.timestamp
+    //     }));
+    //     
+    //     uint256 requestId = paymentRequests.length - 1;
+    //     pendingRequests[to].push(requestId);
+    //     
+    //     return requestId;
+    // }
 
+    // Modified function with event
     function requestPayment(address to, uint256 amount, string memory reason) public returns (uint256) {
         require(to != address(0), "Invalid address");
         require(amount > 0, "Amount must be > 0");
@@ -251,6 +404,29 @@ contract Storage {
         return requestId;
     }
 
+    // Actual function (commented - original payRequest function without event)
+    // function payRequest(uint256 requestId) public payable {
+    //     require(requestId < paymentRequests.length, "Request does not exist");
+    //     PaymentRequest storage request = paymentRequests[requestId];
+    //     require(!request.isPaid, "Already paid");
+    //     require(request.to == msg.sender, "Not the debtor");
+    //     require(msg.value >= request.amount, "Insufficient payment");
+    // 
+    //     request.isPaid = true;
+    //     (bool sent, ) = payable(request.from).call{value: request.amount}("");
+    //     require(sent, "Failed to send ETH");
+    // 
+    //     uint256[] storage pending = pendingRequests[msg.sender];
+    //     for (uint256 i = 0; i < pending.length; i++) {
+    //         if (pending[i] == requestId) {
+    //             pending[i] = pending[pending.length - 1];
+    //             pending.pop();
+    //             break;
+    //         }
+    //     }
+    // }
+
+    // Modified function with event
     function payRequest(uint256 requestId) public payable {
         require(requestId < paymentRequests.length, "Request does not exist");
         PaymentRequest storage request = paymentRequests[requestId];
