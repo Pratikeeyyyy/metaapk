@@ -8,8 +8,10 @@ import {
 import { AuthProvider, useAuth } from "./context/AuthContext";
 import Login from "./pages/Login";
 import Register from "./pages/Register";
+import Landing from "./pages/Landing";
 import ExpenseApp from "./Expenseapp";
 import PrivateRoute from "./guard/AuthGuard";
+
 const AppContent = () => {
   const { user, logout } = useAuth();
 
@@ -19,7 +21,7 @@ const AppContent = () => {
         <div className="bg-gray-800 text-white p-4 flex justify-between items-center">
           <div>
             <span className="font-semibold">👋 Welcome, {user.name}!</span>
-            <span className="ml-4F text-sm text-gray-400">({user.email})</span>
+            <span className="ml-4 text-sm text-gray-400">({user.email})</span>
           </div>
           <button
             onClick={logout}
@@ -39,10 +41,11 @@ function App() {
     <Router>
       <AuthProvider>
         <Routes>
+          <Route path="/" element={<Landing />} />
           <Route path="/login" element={<Login />} />
           <Route path="/register" element={<Register />} />
           <Route
-            path="/"
+            path="/app"
             element={
               <PrivateRoute>
                 <AppContent />
