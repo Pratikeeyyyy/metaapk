@@ -8,13 +8,13 @@ import "../contract/storage.sol";
 contract DeployStorage is Script {
     function run() external {
         uint256 deployerPrivateKey = vm.envUint("PRIVATE_KEY");
-        
+
         vm.startBroadcast(deployerPrivateKey);
-        
+
         Storage storageContract = new Storage();
-        
+
         vm.stopBroadcast();
-        
+
         console.log(" Storage contract deployed to:", address(storageContract));
     }
 }
