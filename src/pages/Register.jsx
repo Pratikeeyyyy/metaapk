@@ -16,7 +16,7 @@ const Register = () => {
   // If user is already logged in, redirect to home
   useEffect(() => {
     if (user) {
-      navigate('/');
+      navigate('/app');
     }
   }, [user, navigate]);
 
@@ -45,9 +45,9 @@ const Register = () => {
       if (result.success) {
         setSuccess(result.message);
 
-        // Redirect to home after 1.5 seconds
+        // Redirect to dashboard after 1.5 seconds
         setTimeout(() => {
-          navigate('/');
+          navigate('/app');
         }, 1500);
       } else {
         setError(result.message);

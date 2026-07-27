@@ -13,7 +13,7 @@ const Login = () => {
   // If user is already logged in, redirect to home
   useEffect(() => {
     if (user) {
-      navigate("/");
+      navigate("/app");
     }
   }, [user, navigate]);
 
@@ -26,8 +26,7 @@ const Login = () => {
     setTimeout(() => {
       const result = login(email, password);
       if (result.success) {
-        // Redirect to home
-        navigate("/");
+        navigate("/app");
       } else {
         setError(result.message);
       }
