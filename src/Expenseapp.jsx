@@ -4,7 +4,7 @@ import { contractABI } from "./abi";
 import { nftABI } from "./NftABI";
 
 // sepolia and nft contract address
-const CONTRACT_ADDRESS = "0x06845C21706598F56d6dBf2Fca6D70254F8893aF";
+const CONTRACT_ADDRESS = "0x5e8013685a6fd02D54C500A8cDaf200Cf46cF7a0";
 const NFT_CONTRACT_ADDRESS = "0x2BE6DE34085B30c501b9B5A7292Dc414a05E8275";
 const SEPOLIA_CHAIN_ID = "11155111";
 
