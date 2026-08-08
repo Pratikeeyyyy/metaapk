@@ -1,24 +1,20 @@
-import React, { createContext, useState, useContext, useEffect } from 'react';
+import { createContext, useState, useContext } from 'react';
 
 const AuthContext = createContext();
 
-export const AuthProvider = ({ children }) => {
-  const [user, setUser] = useState(null);
-  const [loading, setLoading] = useState(true);
-
-  useEffect(() => {
-    // Check if user is logged in (localStorage)
+const getStoredUser = () => {
+  try {
     const storedUser = localStorage.getItem('user');
-    if (storedUser) {
-      try {
-        setUser(JSON.parse(storedUser));
-      } catch (error) {
-        console.error('Error parsing user data:', error);
-        localStorage.removeItem('user');
-      }
-    }
-    setLoading(false);
-  }, []);
+    return storedUser ? JSON.parse(storedUser) : null;
+  } catch (error) {
+    console.error('Error parsing user data:', error);
+    localStorage.removeItem('user');
+    return null;
+  }
+};
+
+export const AuthProvider = ({ children }) => {
+  const [user, setUser] = useState(getStoredUser);
 
   const register = (email, password, name) => {
     // Check if user already exists
@@ -64,7 +60,6 @@ export const AuthProvider = ({ children }) => {
 
   const value = {
     user,
-    loading,
     register,
     login,
     logout
@@ -77,6 +72,7 @@ export const AuthProvider = ({ children }) => {
   );
 };
 
+// eslint-disable-next-line react-refresh/only-export-components -- hook + provider co-located by convention
 export const useAuth = () => {
   const context = useContext(AuthContext);
   if (!context) {

@@ -1,4 +1,4 @@
-import React from "react";
+import { useState, useEffect } from "react";
 import {
   BrowserRouter as Router,
   Routes,
@@ -12,7 +12,7 @@ import Landing from "./pages/Landing";
 import ExpenseApp from "./Expenseapp";
 import PrivateRoute from "./guard/AuthGuard";
 
-const AppContent = () => {
+const AppContent = ({ darkMode, setDarkMode }) => {
   const { user, logout } = useAuth();
 
   return (
@@ -23,12 +23,23 @@ const AppContent = () => {
             <span className="font-semibold">👋 Welcome, {user.name}!</span>
             <span className="ml-4 text-sm text-gray-400">({user.email})</span>
           </div>
-          <button
-            onClick={logout}
-            className="bg-red-500 hover:bg-red-600 px-4 py-2 rounded-lg transition"
-          >
-            Logout
-          </button>
+          <div className="flex items-center gap-3">
+            <button
+              onClick={() => setDarkMode((prev) => !prev)}
+              className="flex items-center gap-2 px-4 py-2 rounded-lg bg-gray-700 hover:bg-gray-600 transition text-sm"
+            >
+              <i
+                className={`fas ${darkMode ? "fa-sun text-yellow-400" : "fa-moon text-indigo-300"}`}
+              ></i>
+              {darkMode ? "Light Mode" : "Dark Mode"}
+            </button>
+            <button
+              onClick={logout}
+              className="bg-red-500 hover:bg-red-600 px-4 py-2 rounded-lg transition"
+            >
+              Logout
+            </button>
+          </div>
         </div>
       )}
       <ExpenseApp />
@@ -37,6 +48,23 @@ const AppContent = () => {
 };
 
 function App() {
+  const [darkMode, setDarkMode] = useState(() => {
+    return localStorage.getItem("theme") === "dark";
+  });
+
+  useEffect(() => {
+    const root = document.documentElement;
+    if (darkMode) {
+      root.classList.add("dark");
+      root.style.colorScheme = "dark";
+      localStorage.setItem("theme", "dark");
+    } else {
+      root.classList.remove("dark");
+      root.style.colorScheme = "light";
+      localStorage.setItem("theme", "light");
+    }
+  }, [darkMode]);
+
   return (
     <Router>
       <AuthProvider>
@@ -48,7 +76,7 @@ function App() {
             path="/app"
             element={
               <PrivateRoute>
-                <AppContent />
+                <AppContent darkMode={darkMode} setDarkMode={setDarkMode} />
               </PrivateRoute>
             }
           />

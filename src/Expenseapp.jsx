@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useCallback } from "react";
+import { useState, useEffect, useCallback, useMemo } from "react";
 import { ethers } from "ethers";
 import { contractABI } from "./abi";
 import { nftABI } from "./NftABI";
@@ -11,6 +11,92 @@ const SEPOLIA_CHAIN_ID = "11155111";
 // image for the nft
 const PLACEHOLDER_IMAGE =
   "data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='400' height='400' viewBox='0 0 400 400'%3E%3Crect width='400' height='400' fill='%236C63FF'/%3E%3Ctext x='50%25' y='50%25' font-size='24' fill='white' text-anchor='middle' dominant-baseline='central'%3E💰 Expense NFT%3C/text%3E%3C/svg%3E";
+
+// card list used by the payment-state detail pages
+function ExpenseDetailList({ list, emptyText, formatAddress }) {
+  if (list.length === 0) {
+    return (
+      <p className="text-gray-500 dark:text-slate-400 text-center py-8">
+        {emptyText}
+      </p>
+    );
+  }
+  return (
+    <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+      {list.map((expense, idx) => (
+        <div
+          key={expense.id}
+          className="border rounded-xl p-4 bg-white dark:bg-slate-700 hover:shadow-md transition-shadow animate-slideUp"
+          style={{ animationDelay: `${idx * 80}ms` }}
+        >
+          <div className="flex justify-between items-start">
+            <div>
+              <h3 className="font-bold text-slate-800 dark:text-slate-100">
+                {expense.expname}
+              </h3>
+              <p className="text-sm text-gray-500 dark:text-slate-400">
+                Paid by: {expense.paidby} (
+                {formatAddress(expense.payerAddress)})
+              </p>
+              <p className="text-sm text-gray-500 dark:text-slate-400">
+                Location: {expense.paddress}
+              </p>
+            </div>
+            <span
+              className={`px-3 py-1 rounded-full text-xs font-semibold ${
+                expense.status === 0
+                  ? "bg-yellow-100 text-yellow-700 dark:bg-yellow-500/20 dark:text-yellow-300"
+                  : expense.status === 1
+                    ? "bg-green-100 text-green-700 dark:bg-green-500/20 dark:text-green-300"
+                    : expense.status === 2
+                      ? "bg-red-100 text-red-700 dark:bg-red-500/20 dark:text-red-300"
+                      : "bg-orange-100 text-orange-700 dark:bg-orange-500/20 dark:text-orange-300"
+              }`}
+            >
+              {expense.statusText}
+            </span>
+          </div>
+          <div className="mt-3">
+            <span className="text-lg font-bold text-slate-800 dark:text-slate-100">
+              {expense.amt.toFixed(4)} ETH
+            </span>
+            <span className="text-sm text-gray-500 dark:text-slate-400 ml-2">
+              ({expense.participantCount} participants, {expense.shareAmount}{" "}
+              ETH each)
+            </span>
+          </div>
+          {expense.participants.length > 0 && (
+            <div className="mt-3 border-t pt-3 dark:border-slate-600">
+              <p className="text-xs font-semibold text-gray-500 dark:text-slate-400 mb-1">
+                PARTICIPANTS:
+              </p>
+              <div className="space-y-1">
+                {expense.participants.map((addr, i) => (
+                  <div
+                    key={i}
+                    className="flex justify-between items-center text-sm bg-gray-50 dark:bg-slate-800 p-1.5 rounded"
+                  >
+                    <span className="font-medium dark:text-slate-200">
+                      {expense.participantNames[i] || `Participant ${i + 1}`}
+                      <span className="text-gray-400 dark:text-slate-500 ml-2 text-xs">
+                        {formatAddress(addr)}
+                      </span>
+                    </span>
+                    {expense.status === 1 && (
+                      <span className="bg-green-100 dark:bg-green-500/20 text-green-600 dark:text-green-300 text-xs px-1.5 py-0.5 rounded">
+                        ✅ Paid
+                      </span>
+                    )}
+                  </div>
+                ))}
+              </div>
+            </div>
+          )}
+        </div>
+      ))}
+    </div>
+  );
+}
 
 function ExpenseApp() {
   // for the wallet, here are the state of metawallet
@@ -45,7 +131,6 @@ function ExpenseApp() {
   const [status, setStatus] = useState("0");
   const [badDebtPerson, setBadDebtPerson] = useState("");
   const [badDebtAddress, setBadDebtAddress] = useState("");
-  const [participantCount, setParticipantCount] = useState(2);
 
   // this are the state of the edxpense app
   const [expenses, setExpenses] = useState([]);
@@ -55,7 +140,6 @@ function ExpenseApp() {
   const [pendingCount, setPendingCount] = useState(0);
   const [badDebtors, setBadDebtors] = useState([]);
   const [loading, setLoading] = useState(false);
-  const [splitAmount, setSplitAmount] = useState("0");
   const [showBadDebt, setShowBadDebt] = useState(false);
   const [refreshing, setRefreshing] = useState(false);
   const [dataLoaded, setDataLoaded] = useState(false);
@@ -79,6 +163,9 @@ function ExpenseApp() {
     received: 0,
     paymentDue: 0,
   });
+
+  // detail page for each payment state card (null = dashboard)
+  const [detailView, setDetailView] = useState(null);
 
   // for the seepolia to be used
   const switchToSepolia = async () => {
@@ -116,6 +203,7 @@ function ExpenseApp() {
 
   // here init ether
   const initEthers = useCallback(async () => {
+    await Promise.resolve();
     if (window.ethereum) {
       try {
         const providerInstance = new ethers.providers.Web3Provider(
@@ -259,7 +347,7 @@ function ExpenseApp() {
                 );
                 image = PLACEHOLDER_IMAGE;
               }
-            } catch (err) {
+            } catch {
               console.log(
                 `⚠️ Error fetching metadata for token ${tokenId}, using placeholder`,
               );
@@ -336,9 +424,9 @@ function ExpenseApp() {
     async (contractInstance) => {
       if (!contractInstance) return;
       try {
-        setRefreshing(true);
         const length = await contractInstance.getLength();
         const totalCount = Number(length);
+        setRefreshing(true);
         if (totalCount === 0) {
           setExpenses([]);
           setTotalExpenses(0);
@@ -373,7 +461,7 @@ function ExpenseApp() {
                 await contractInstance.getParticipants(i);
               participants = addresses;
               participantNames = names;
-            } catch (err) {
+            } catch {
               console.log("Could not fetch participants for expense", i);
             }
             // Check for bad debtors
@@ -396,7 +484,7 @@ function ExpenseApp() {
                     expenseId: i, // ✅ Add expenseId to track which expense
                   });
                 }
-              } catch (err) {
+              } catch {
                 console.log("Could not fetch bad debtors for expense", i);
               }
             }
@@ -477,21 +565,21 @@ function ExpenseApp() {
         }
         setAllRequests(requests);
 
-        // Only show pending requests where USER is the recipient
+        // Show ALL unpaid requests involving the user (both owed & owing)
         if (walletAddress) {
           const pendingList = [];
           for (let i = 0; i < requests.length; i++) {
             const req = requests[i];
-            if (
-              req.to.toLowerCase() === walletAddress.toLowerCase() &&
-              !req.isPaid
-            ) {
+            const isMine =
+              req.to.toLowerCase() === walletAddress.toLowerCase() ||
+              req.from.toLowerCase() === walletAddress.toLowerCase();
+            if (isMine && !req.isPaid) {
               pendingList.push(req);
             }
           }
           setPendingRequests(pendingList);
         }
-      } catch (error) {
+      } catch {
         console.log("ℹ️ Payment requests not available");
         setAllRequests([]);
         setPendingRequests([]);
@@ -499,6 +587,20 @@ function ExpenseApp() {
     },
     [walletAddress],
   );
+
+  // for getting the contract baalance
+  const getContractBalance = useCallback(async (providerInstance) => {
+    if (!providerInstance) return;
+    try {
+      const balance = await providerInstance.getBalance(CONTRACT_ADDRESS);
+      const ethBalance = parseFloat(ethers.utils.formatEther(balance)).toFixed(
+        4,
+      );
+      setContractBalance(ethBalance);
+    } catch (error) {
+      console.error("Failed to get contract balance:", error);
+    }
+  }, []);
 
   // connect wallet
   const connectWallet = useCallback(async () => {
@@ -559,7 +661,7 @@ function ExpenseApp() {
       setError("Failed to connect wallet: " + error.message);
       setIsLoading(false);
     }
-  }, [initEthers, loadPaymentRequests, loadUserNFTs, loadExpenses]);
+  }, [initEthers, loadPaymentRequests, loadUserNFTs, loadExpenses, getContractBalance]);
 
   // discconnect wallet
   const disconnectWallet = useCallback(() => {
@@ -721,7 +823,7 @@ function ExpenseApp() {
         alert(
           "❌ Failed to upload metadata. Please check your Pinata JWT in .env file and try again.",
         );
-        throw new Error("Metadata upload failed");
+        throw new Error("Metadata upload failed", { cause: uploadError });
       }
       setUploading(false);
 
@@ -782,33 +884,12 @@ function ExpenseApp() {
     uploadMetadataToPinata,
   ]);
 
-  // for getting the contract baalance
-  const getContractBalance = useCallback(async (providerInstance) => {
-    if (!providerInstance) return;
-    try {
-      const balance = await providerInstance.getBalance(CONTRACT_ADDRESS);
-      const ethBalance = parseFloat(ethers.utils.formatEther(balance)).toFixed(
-        4,
-      );
-      setContractBalance(ethBalance);
-    } catch (error) {
-      console.error("Failed to get contract balance:", error);
-    }
-  }, []);
-
   // spliting the amount in friends equally
-  const updateSplitAmount = useCallback(() => {
+  const splitAmount = useMemo(() => {
     const amt = parseFloat(amount) || 0;
     const totalPeople = participants.length + 1;
-    const split =
-      totalPeople > 0 && amt > 0 ? (amt / totalPeople).toFixed(4) : "0.0000";
-    setSplitAmount(split);
-    return split;
+    return totalPeople > 0 && amt > 0 ? (amt / totalPeople).toFixed(4) : "0.0000";
   }, [amount, participants]);
-
-  useEffect(() => {
-    updateSplitAmount();
-  }, [amount, participants, updateSplitAmount]);
 
   const handleAmountChange = (e) => {
     const value = e.target.value;
@@ -826,7 +907,6 @@ function ExpenseApp() {
   const addParticipant = () => {
     if (participants.length < 10) {
       setParticipants([...participants, { name: "", address: "" }]);
-      setParticipantCount(participants.length + 1);
     } else {
       alert("Maximum 10 participants allowed");
     }
@@ -837,7 +917,6 @@ function ExpenseApp() {
     if (participants.length > 1) {
       const newParticipants = participants.filter((_, i) => i !== index);
       setParticipants(newParticipants);
-      setParticipantCount(newParticipants.length);
     } else {
       alert("At least 1 participant required");
     }
@@ -891,12 +970,10 @@ function ExpenseApp() {
       ]);
       setLocation("");
       setAmount("");
-      setSplitAmount("0");
       setStatus("0");
       setShowBadDebt(false);
       setBadDebtPerson("");
       setBadDebtAddress("");
-      setParticipantCount(2);
       await loadExpenses(contract);
       await loadPaymentRequests(contract);
       await getContractBalance(provider);
@@ -1069,30 +1146,6 @@ function ExpenseApp() {
     [contract, isConnected, loadExpenses, loadPaymentRequests, expenses],
   );
 
-  // Request payment from payer for a specific expense
-  const requestPaymentFromPayer = useCallback(
-    async (expenseId) => {
-      if (!contract || !isConnected) {
-        alert("Please connect wallet first");
-        return;
-      }
-      try {
-        setLoading(true);
-        // the actual request to the address that the payer creates expenses
-        const tx = await contract.requestPaymentFromPayer(expenseId);
-        await tx.wait();
-        await loadPaymentRequests(contract);
-        alert("✅ Payment request sent to the payer!");
-      } catch (error) {
-        console.error("❌ Failed to request payment:", error);
-        alert("Failed to request payment: " + (error.reason || error.message));
-      } finally {
-        setLoading(false);
-      }
-    },
-    [contract, isConnected, loadPaymentRequests],
-  );
-
   // status channge hadling
   const handleStatusChange = (e) => {
     const value = e.target.value;
@@ -1139,7 +1192,7 @@ function ExpenseApp() {
     } finally {
       setRequestLoading(false);
     }
-  }, [signer, isConnected, requestRecipient, requestAmount, requestReason]);
+  }, [signer, isConnected, requestRecipient, requestAmount]);
 
   //  PAY REQUEST
   const payRequest = useCallback(
@@ -1202,7 +1255,9 @@ function ExpenseApp() {
 
   //  USE EFFECTS
   useEffect(() => {
-    initEthers();
+    const initTimer = setTimeout(() => {
+      initEthers();
+    }, 0);
     if (window.ethereum) {
       const handleAccountsChanged = (accounts) => {
         if (accounts.length === 0) {
@@ -1217,6 +1272,7 @@ function ExpenseApp() {
       window.ethereum.on("accountsChanged", handleAccountsChanged);
       window.ethereum.on("chainChanged", handleChainChanged);
       return () => {
+        clearTimeout(initTimer);
         if (window.ethereum) {
           window.ethereum.removeListener(
             "accountsChanged",
@@ -1226,22 +1282,27 @@ function ExpenseApp() {
         }
       };
     }
+    return () => clearTimeout(initTimer);
   }, [initEthers, connectWallet, disconnectWallet]);
 
   useEffect(() => {
     if (contract && isConnected && isCorrectNetwork) {
-      loadExpenses(contract);
-      getContractBalance(provider);
-      const interval = setInterval(() => {
-        if (contract && isConnected && isCorrectNetwork) {
-          loadExpenses(contract);
-          getContractBalance(provider);
-          if (nftContract) {
-            loadUserNFTs(nftContract);
-          }
+      let cancelled = false;
+      const refresh = () => {
+        if (cancelled) return;
+        loadExpenses(contract);
+        getContractBalance(provider);
+        if (nftContract) {
+          loadUserNFTs(nftContract);
         }
-      }, 15000);
-      return () => clearInterval(interval);
+      };
+      const timer = setTimeout(refresh, 0);
+      const interval = setInterval(refresh, 15000);
+      return () => {
+        cancelled = true;
+        clearTimeout(timer);
+        clearInterval(interval);
+      };
     }
   }, [
     contract,
@@ -1274,18 +1335,15 @@ function ExpenseApp() {
   ]);
 
   return (
-    <div className="min-h-screen bg-gradient-to-br from-slate-100 to-slate-200 p-6">
+    <div className="min-h-screen bg-gradient-to-br from-slate-100 to-slate-200 dark:from-slate-800 dark:via-slate-900 dark:to-slate-950 p-6 transition-colors duration-500">
       <div className="w-full max-w-7xl mx-auto">
         {/* Header Section */}
-        <div className="bg-white rounded-2xl shadow-xl p-8 mb-6">
+        <div className="bg-white dark:bg-slate-800 dark:border dark:border-slate-700 dark:text-slate-100 rounded-2xl shadow-xl p-8 mb-6 animate-slideUp">
           <div className="text-center mb-8">
-            <div className="inline-block p-3 bg-orange-100 rounded-full mb-3">
-              <i className="fas fa-users text-orange-600 text-2xl"></i>
-            </div>
-            <h1 className="text-3xl font-bold text-slate-800">
+            <h1 className="text-3xl font-bold text-slate-800 dark:text-slate-100">
               💰 Expense Sharing DApp
             </h1>
-            <p className="text-slate-500 text-sm mt-2">
+            <p className="text-slate-500 dark:text-slate-400 text-sm mt-2">
               Split expenses with friends on Sepolia
             </p>
             {isConnected && isCorrectNetwork && (
@@ -1294,12 +1352,13 @@ function ExpenseApp() {
               </span>
             )}
           </div>
+
           {/* NFT Import Button */}
           {isConnected && isCorrectNetwork && (
-            <div className="mb-4 p-4 bg-purple-50 rounded-xl border border-purple-200">
+            <div className="mb-4 p-4 bg-purple-50 dark:bg-slate-700 rounded-xl border border-purple-200 dark:border-purple-500/30">
               <div className="flex items-center justify-between flex-wrap gap-3">
                 <div>
-                  <h4 className="font-semibold text-purple-700 flex items-center gap-2">
+                  <h4 className="font-semibold text-purple-700 dark:text-purple-300 flex items-center gap-2">
                     <i className="fas fa-cube"></i> Your NFTs
                     {userNFTs.length > 0 && (
                       <span className="bg-purple-600 text-white text-xs px-2 py-0.5 rounded-full">
@@ -1307,7 +1366,7 @@ function ExpenseApp() {
                       </span>
                     )}
                   </h4>
-                  <p className="text-xs text-purple-600 mt-1">
+                  <p className="text-xs text-purple-600 dark:text-purple-400 mt-1">
                     {userNFTs.length > 0
                       ? `You have ${userNFTs.length} expense receipt NFT${userNFTs.length > 1 ? "s" : ""}`
                       : "No NFTs yet. Mint an expense NFT!"}
@@ -1335,23 +1394,23 @@ function ExpenseApp() {
 
           {/* Debug info */}
           {debugInfo && (
-            <div className="mb-4 p-3 bg-blue-50 border border-blue-200 rounded-lg text-xs">
-              <strong className="text-blue-700">🔍 Debug:</strong>
-              <div className="text-blue-600 mt-1 break-all font-mono">
+            <div className="mb-4 p-3 bg-blue-50 dark:bg-slate-700 border border-blue-200 dark:border-blue-500/30 rounded-lg text-xs">
+              <strong className="text-blue-700 dark:text-blue-300">🔍 Debug:</strong>
+              <div className="text-blue-600 dark:text-blue-400 mt-1 break-all font-mono">
                 {debugInfo}
               </div>
             </div>
           )}
 
           {error && (
-            <div className="mb-4 p-3 bg-red-100 border border-red-400 text-red-700 rounded-lg">
+            <div className="mb-4 p-3 bg-red-100 dark:bg-red-500/20 border border-red-400 dark:border-red-500/50 text-red-700 dark:text-red-300 rounded-lg">
               <i className="fas fa-exclamation-triangle mr-2"></i>
               {error}
             </div>
           )}
 
           {networkError && (
-            <div className="mb-4 p-3 bg-yellow-100 border border-yellow-400 text-yellow-700 rounded-lg">
+            <div className="mb-4 p-3 bg-yellow-100 dark:bg-yellow-500/20 border border-yellow-400 dark:border-yellow-500/50 text-yellow-700 dark:text-yellow-300 rounded-lg">
               <i className="fas fa-exclamation-triangle mr-2"></i>
               {networkError}
             </div>
@@ -1393,7 +1452,7 @@ function ExpenseApp() {
             </button>
           </div>
 
-          <div className="text-center text-sm text-slate-500 mt-3">
+          <div className="text-center text-sm text-slate-500 dark:text-slate-400 mt-3">
             <i
               className={`fas fa-circle text-xs ${isConnected && isCorrectNetwork ? "text-green-500" : "text-gray-400"}`}
             ></i>
@@ -1406,43 +1465,660 @@ function ExpenseApp() {
             </span>
           </div>
         </div>
-        {/* ✅ NEW: Summary Cards - Pending, Paid, Received, Payment Due */}
-        {isConnected && isCorrectNetwork && (
-          <div className="grid grid-cols-2 md:grid-cols-4 gap-4 mb-6">
-            <div className="bg-yellow-50 border border-yellow-200 rounded-xl p-4 text-center">
-              <p className="text-yellow-600 text-sm font-medium">⏳ Pending</p>
-              <p className="text-2xl font-bold text-yellow-700">
-                {summaryStats.pending}
-              </p>
-            </div>
-            <div className="bg-green-50 border border-green-200 rounded-xl p-4 text-center">
-              <p className="text-green-600 text-sm font-medium">✅ Paid</p>
-              <p className="text-2xl font-bold text-green-700">
-                {summaryStats.paid}
-              </p>
-            </div>
-            <div className="bg-blue-50 border border-blue-200 rounded-xl p-4 text-center">
-              <p className="text-blue-600 text-sm font-medium">💰 Received</p>
-              <p className="text-2xl font-bold text-blue-700">
-                {summaryStats.received}
-              </p>
-            </div>
-            <div className="bg-purple-50 border border-purple-200 rounded-xl p-4 text-center">
-              <p className="text-purple-600 text-sm font-medium">
-                💳 Payment Due
-              </p>
-              <p className="text-2xl font-bold text-purple-700">
-                {summaryStats.paymentDue}
-              </p>
-            </div>
+        {/* Detail View - payment state pages */}
+        {detailView ? (
+          <div className="bg-white dark:bg-slate-800 dark:border dark:border-slate-700 rounded-2xl shadow-xl p-6 mb-6 animate-pop">
+            <button
+              onClick={() => setDetailView(null)}
+              className="mb-4 flex items-center gap-2 text-sm font-semibold text-orange-600 hover:text-orange-700 dark:text-orange-400"
+            >
+              <i className="fas fa-arrow-left"></i> Back to Dashboard
+            </button>
+
+            {detailView === "pending" && (
+              <>
+                <h2 className="text-2xl font-bold text-slate-700 dark:text-slate-100 mb-4">
+                  ⏳ Pending Payment Requests
+                </h2>
+                {pendingRequests.length === 0 ? (
+                  <p className="text-gray-500 dark:text-slate-400 text-center py-8">
+                    No pending requests for you.
+                  </p>
+                ) : (
+                  <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                    {pendingRequests.map((req, idx) => {
+                      const userOwes =
+                        req.from.toLowerCase() === walletAddress?.toLowerCase();
+                      return (
+                        <div
+                          key={idx}
+                          className="border-2 border-red-200 dark:border-red-500/30 bg-red-50 dark:bg-slate-700 rounded-xl p-4 animate-slideUp"
+                          style={{ animationDelay: `${idx * 80}ms` }}
+                        >
+                          <div className="flex justify-between items-start">
+                            <div>
+                              <p className="font-semibold text-slate-800 dark:text-slate-100">
+                                {userOwes
+                                  ? "→ You owe"
+                                  : "← Owes you"}{" "}
+                                {formatAddress(userOwes ? req.to : req.from)}
+                              </p>
+                              <p className="text-sm text-gray-600 dark:text-slate-300 mt-1">
+                                Reason: {req.reason}
+                              </p>
+                              <p className="text-xs text-gray-400 dark:text-slate-400 mt-1">
+                                {req.timestamp}
+                              </p>
+                            </div>
+                            <span className="text-lg font-bold text-red-600 dark:text-red-400 whitespace-nowrap">
+                              {req.amount} ETH
+                            </span>
+                          </div>
+                          {userOwes && (
+                            <button
+                              onClick={() => payRequest(req.id, req.amount)}
+                              disabled={loading || !isConnected}
+                              className="mt-3 w-full bg-green-600 hover:bg-green-700 text-white px-4 py-2 rounded-lg text-sm disabled:opacity-50 flex items-center justify-center gap-2"
+                            >
+                              <i className="fas fa-money-bill-wave"></i> Pay Now
+                            </button>
+                          )}
+                        </div>
+                      );
+                    })}
+                  </div>
+                )}
+              </>
+            )}
+
+            {detailView === "paid" && (
+              <>
+                <h2 className="text-2xl font-bold text-slate-700 dark:text-slate-100 mb-4">
+                  ✅ Paid Expenses
+                </h2>
+                <ExpenseDetailList
+                  list={expenses.filter((exp) => exp.status === 1)}
+                  emptyText="No paid expenses yet."
+                  formatAddress={formatAddress}
+                />
+              </>
+            )}
+
+            {detailView === "received" && (
+              <>
+                <h2 className="text-2xl font-bold text-slate-700 dark:text-slate-100 mb-4">
+                  💰 Payments You Received
+                </h2>
+                <ExpenseDetailList
+                  list={expenses.filter(
+                    (exp) =>
+                      exp.payerAddress?.toLowerCase() ===
+                      walletAddress?.toLowerCase(),
+                  )}
+                  emptyText="You haven't received any payments yet."
+                  formatAddress={formatAddress}
+                />
+              </>
+            )}
+
+            {detailView === "paymentDue" && (
+              <>
+                <h2 className="text-2xl font-bold text-slate-700 dark:text-slate-100 mb-4">
+                  💳 Payment Due
+                </h2>
+                {expenses
+                  .filter((exp) => {
+                    const isParticipant = exp.participants?.some(
+                      (addr) =>
+                        addr.toLowerCase() === walletAddress?.toLowerCase(),
+                    );
+                    const isPayer =
+                      exp.payerAddress?.toLowerCase() ===
+                      walletAddress?.toLowerCase();
+                    return (
+                      (exp.status === 0 || exp.status === 3) &&
+                      isParticipant &&
+                      !isPayer
+                    );
+                  }).length === 0 ? (
+                  <p className="text-gray-500 dark:text-slate-400 text-center py-8">
+                    You have no payments due. All settled up!
+                  </p>
+                ) : (
+                  <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                    {expenses
+                      .filter((exp) => {
+                        const isParticipant = exp.participants?.some(
+                          (addr) =>
+                            addr.toLowerCase() === walletAddress?.toLowerCase(),
+                        );
+                        const isPayer =
+                          exp.payerAddress?.toLowerCase() ===
+                          walletAddress?.toLowerCase();
+                        return (
+                          (exp.status === 0 || exp.status === 3) &&
+                          isParticipant &&
+                          !isPayer
+                        );
+                      })
+                      .map((expense, idx) => (
+                        <div
+                          key={expense.id}
+                          className="bg-purple-50 dark:bg-slate-700 border-2 border-purple-200 dark:border-purple-500/30 rounded-xl p-4 animate-slideUp"
+                          style={{ animationDelay: `${idx * 80}ms` }}
+                        >
+                          <div className="flex justify-between items-start">
+                            <div>
+                              <p className="font-semibold text-purple-700 dark:text-purple-300">
+                                {expense.expname}
+                              </p>
+                              <p className="text-sm text-gray-600 dark:text-slate-300 mt-1">
+                                Owe: {expense.shareamount.toFixed(4)} ETH to{" "}
+                                {expense.paidby}
+                              </p>
+                            </div>
+                            <span
+                              className={`px-3 py-1 rounded-full text-xs font-semibold ${
+                                expense.status === 0
+                                  ? "bg-yellow-100 text-yellow-700 dark:bg-yellow-500/20 dark:text-yellow-300"
+                                  : "bg-orange-100 text-orange-700 dark:bg-orange-500/20 dark:text-orange-300"
+                              }`}
+                            >
+                              {expense.statusText}
+                            </span>
+                          </div>
+                          <button
+                            onClick={() =>
+                              handleParticipantPay(
+                                expense.id,
+                                expense.shareamount,
+                              )
+                            }
+                            disabled={loading}
+                            className="mt-3 w-full bg-green-600 hover:bg-green-700 text-white px-4 py-2 rounded-lg text-sm disabled:opacity-50 flex items-center justify-center gap-2"
+                          >
+                            <i className="fas fa-money-bill-wave"></i> Pay Now
+                          </button>
+                        </div>
+                      ))}
+                  </div>
+                )}
+
+                {badDebtors.length > 0 && (
+                  <div className="mt-6 bg-red-50 dark:bg-slate-700 border-2 border-red-300 dark:border-red-500/30 rounded-2xl p-4 animate-slideUp">
+                    <h3 className="text-red-700 dark:text-red-300 font-bold flex items-center gap-2 mb-2">
+                      <i className="fas fa-exclamation-triangle"></i> Bad Debtors
+                      Detected
+                    </h3>
+                    {badDebtors.map((debtor, idx) => (
+                      <div
+                        key={idx}
+                        className="flex justify-between items-center bg-white dark:bg-slate-800 p-2 rounded mt-1"
+                      >
+                        <div>
+                          <span className="font-semibold text-red-700 dark:text-red-300">
+                            {debtor.name}
+                          </span>
+                          <span className="text-gray-500 dark:text-slate-400 text-sm ml-2">
+                            ({formatAddress(debtor.address)})
+                          </span>
+                        </div>
+                        <div className="flex items-center gap-2">
+                          <span className="text-red-600 dark:text-red-400 font-bold">
+                            {debtor.amount} ETH
+                          </span>
+                          <button
+                            onClick={() =>
+                              markDebtorAsPaid(
+                                debtor.expenseId || 0,
+                                debtor.address,
+                              )
+                            }
+                            disabled={loading || !isConnected}
+                            className="bg-green-500 hover:bg-green-600 text-white px-2 py-1 rounded text-xs disabled:opacity-50"
+                          >
+                            Mark Paid
+                          </button>
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                )}
+              </>
+            )}
+
+            {detailView === "mint" && (
+              <>
+                <h2 className="text-2xl font-bold text-slate-700 dark:text-slate-100 mb-4">
+                  🎨 Mint Expense NFT
+                </h2>
+                <p className="text-sm text-gray-500 dark:text-slate-400 mb-4">
+                  Mint a receipt NFT from a fully paid expense to keep a
+                  verifiable record on-chain.
+                </p>
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                  <div>
+                    <label className="text-sm font-semibold text-gray-600 dark:text-slate-300 block mb-1">
+                      Select Expense
+                    </label>
+                    <select
+                      className="w-full border dark:border-slate-600 dark:bg-slate-700 dark:text-slate-100 rounded-lg p-3 focus:outline-none focus:ring-2 focus:ring-purple-500"
+                      value={selectedExpenseForNFT}
+                      onChange={(e) => setSelectedExpenseForNFT(e.target.value)}
+                      disabled={!isConnected || !isCorrectNetwork}
+                    >
+                      <option value="">Choose an expense...</option>
+                      {expenses
+                        .filter((exp) => {
+                          const isPayer =
+                            exp.payerAddress?.toLowerCase() ===
+                            walletAddress?.toLowerCase();
+                          return isPayer && exp.status === 1;
+                        })
+                        .map((exp) => (
+                          <option key={exp.id} value={exp.id}>
+                            {exp.expname} - {exp.amt.toFixed(4)} ETH ✅ Paid
+                          </option>
+                        ))}
+                    </select>
+                  </div>
+                  <div>
+                    <label className="text-sm font-semibold text-gray-600 dark:text-slate-300 block mb-1">
+                      Upload Custom Image (Optional)
+                    </label>
+                    <input
+                      type="file"
+                      accept="image/*"
+                      onChange={(e) => {
+                        setNftImageFile(e.target.files[0]);
+                        if (e.target.files[0]) {
+                          setNftImage(URL.createObjectURL(e.target.files[0]));
+                        }
+                      }}
+                      className="w-full border dark:border-slate-600 dark:bg-slate-700 dark:text-slate-100 rounded-lg p-2 text-sm"
+                      disabled={!isConnected || !isCorrectNetwork}
+                    />
+                  </div>
+                </div>
+
+                {nftImage && (
+                  <div className="mt-4 flex justify-center">
+                    <img
+                      src={nftImage}
+                      alt="NFT Preview"
+                      className="w-48 h-48 object-cover rounded-xl border-2 border-purple-300 shadow-md"
+                    />
+                  </div>
+                )}
+
+                <button
+                  onClick={mintExpenseNFT}
+                  disabled={
+                    mintingNFT ||
+                    !isConnected ||
+                    !isCorrectNetwork ||
+                    !selectedExpenseForNFT
+                  }
+                  className={`mt-4 w-full text-white font-semibold py-3 rounded-xl flex items-center justify-center gap-2 transition-all ${
+                    mintingNFT ||
+                    !isConnected ||
+                    !isCorrectNetwork ||
+                    !selectedExpenseForNFT
+                      ? "bg-gray-400 cursor-not-allowed"
+                      : "bg-purple-600 hover:bg-purple-700"
+                  }`}
+                >
+                  <i className="fas fa-magic"></i>
+                  {mintingNFT
+                    ? uploading
+                      ? "Uploading to IPFS..."
+                      : "Minting..."
+                    : "Mint Expense NFT"}
+                </button>
+              </>
+            )}
+
+            {detailView === "requests" && (
+              <>
+                <h2 className="text-2xl font-bold text-slate-700 dark:text-slate-100 mb-4">
+                  🔔 Your Payment Requests
+                </h2>
+                {pendingRequests.length === 0 ? (
+                  <p className="text-gray-500 dark:text-slate-400 text-center py-8">
+                    No pending payment requests for you.
+                  </p>
+                ) : (
+                  <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                    {pendingRequests.map((req, idx) => {
+                      const userOwes =
+                        req.from.toLowerCase() === walletAddress?.toLowerCase();
+                      return (
+                        <div
+                          key={idx}
+                          className="border-2 border-red-200 dark:border-red-500/30 bg-red-50 dark:bg-slate-700 rounded-xl p-4 animate-slideUp"
+                          style={{ animationDelay: `${idx * 80}ms` }}
+                        >
+                          <div className="flex justify-between items-start">
+                            <div>
+                              <p className="font-semibold text-slate-800 dark:text-slate-100">
+                                {userOwes ? "→ You owe" : "← Owes you"}{" "}
+                                {formatAddress(userOwes ? req.to : req.from)}
+                              </p>
+                              <p className="text-sm text-gray-600 dark:text-slate-300 mt-1">
+                                Reason: {req.reason}
+                              </p>
+                              <p className="text-xs text-gray-400 dark:text-slate-400 mt-1">
+                                {req.timestamp}
+                              </p>
+                            </div>
+                            <span className="text-lg font-bold text-red-600 dark:text-red-400 whitespace-nowrap">
+                              {req.amount} ETH
+                            </span>
+                          </div>
+                          {userOwes && (
+                            <button
+                              onClick={() => payRequest(req.id, req.amount)}
+                              disabled={loading || !isConnected}
+                              className="mt-3 w-full bg-green-600 hover:bg-green-700 text-white px-4 py-2 rounded-lg text-sm disabled:opacity-50 flex items-center justify-center gap-2"
+                            >
+                              <i className="fas fa-money-bill-wave"></i> Pay Now
+                            </button>
+                          )}
+                        </div>
+                      );
+                    })}
+                  </div>
+                )}
+
+                <div className="mt-6 border-t dark:border-slate-600 pt-4">
+                  <div className="flex justify-between items-center mb-3">
+                    <h3 className="font-bold text-slate-700 dark:text-slate-100">
+                      Request History
+                    </h3>
+                    <button
+                      onClick={() => setShowRequests(!showRequests)}
+                      className="text-sm text-blue-600 dark:text-blue-400 hover:text-blue-800"
+                    >
+                      {showRequests ? "Hide" : "Show All Requests"}
+                    </button>
+                  </div>
+                  {showRequests && (
+                    allRequests.length === 0 ? (
+                      <p className="text-gray-500 dark:text-slate-400 text-center py-4">
+                        No requests found.
+                      </p>
+                    ) : (
+                      <div className="space-y-2 max-h-[400px] overflow-y-auto">
+                        {allRequests
+                          .filter(
+                            (req) =>
+                              req.from.toLowerCase() ===
+                                walletAddress?.toLowerCase() ||
+                              req.to.toLowerCase() ===
+                                walletAddress?.toLowerCase(),
+                          )
+                          .map((req, idx) => (
+                            <div
+                              key={idx}
+                              className={`border dark:border-slate-600 rounded-lg p-3 flex justify-between items-center ${req.isPaid ? "bg-gray-50 dark:bg-slate-700 opacity-75" : "bg-white dark:bg-slate-800"}`}
+                            >
+                              <div>
+                                <p className="text-sm font-medium dark:text-slate-200">
+                                  {req.from.toLowerCase() ===
+                                  walletAddress?.toLowerCase()
+                                    ? "You → "
+                                    : ""}
+                                  {formatAddress(req.from)} →{" "}
+                                  {formatAddress(req.to)}
+                                  {req.to.toLowerCase() ===
+                                  walletAddress?.toLowerCase()
+                                    ? " ← You"
+                                    : ""}
+                                </p>
+                                <p className="text-xs text-gray-500 dark:text-slate-400">
+                                  {req.reason} | {req.timestamp}
+                                </p>
+                              </div>
+                              <div className="text-right">
+                                <p className="font-bold text-sm dark:text-slate-100">
+                                  {req.amount} ETH
+                                </p>
+                                <p
+                                  className={`text-xs font-semibold ${req.isPaid ? "text-green-600 dark:text-green-400" : "text-yellow-600 dark:text-yellow-400"}`}
+                                >
+                                  {req.isPaid ? "✅ Paid" : "⏳ Pending"}
+                                </p>
+                                <p className="text-xs text-gray-400 dark:text-slate-500 mt-1">
+                                  {req.from.toLowerCase() ===
+                                  walletAddress?.toLowerCase()
+                                    ? "You owe"
+                                    : "Owes you"}
+                                </p>
+                              </div>
+                            </div>
+                          ))}
+                      </div>
+                    )
+                  )}
+                </div>
+              </>
+            )}
           </div>
-        )}
+        ) : (
+          <>
+            {/* Repay Payment to Actual Owner - above the states */}
+            <div className="mt-6 bg-white dark:bg-slate-800 dark:border dark:border-slate-700 rounded-2xl shadow-xl p-6 animate-slideUp">
+              <h2 className="text-xl font-bold text-slate-700 dark:text-slate-100 mb-4">
+                <i className="fas fa-hand-holding-usd text-yellow-600"></i>{" "}
+                Repay Payment to Actual Owner
+              </h2>
+              <p className="text-sm text-gray-500 dark:text-slate-400 mb-4">
+                Use this section if you are a debtor and want to create a
+                separate request to repay the actual owner directly.
+              </p>
+              <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
+                <input
+                  type="text"
+                  placeholder="Actual Owner's Address (0x...)"
+                  className="border rounded-lg p-3 bg-white dark:bg-slate-700 dark:text-slate-100 focus:outline-none focus:ring-2 focus:ring-yellow-500"
+                  value={requestRecipient}
+                  onChange={(e) => setRequestRecipient(e.target.value)}
+                  disabled={!isConnected || !isCorrectNetwork}
+                />
+                <input
+                  type="number"
+                  step="0.001"
+                  min="0.001"
+                  placeholder="Amount (ETH)"
+                  className="border rounded-lg p-3 bg-white dark:bg-slate-700 dark:text-slate-100 focus:outline-none focus:ring-2 focus:ring-yellow-500"
+                  value={requestAmount}
+                  onChange={(e) => setRequestAmount(e.target.value)}
+                  disabled={!isConnected || !isCorrectNetwork}
+                />
+                <input
+                  type="text"
+                  placeholder="Reason (e.g. Repaying dinner debt)"
+                  className="border rounded-lg p-3 bg-white dark:bg-slate-700 dark:text-slate-100 focus:outline-none focus:ring-2 focus:ring-yellow-500"
+                  value={requestReason}
+                  onChange={(e) => setRequestReason(e.target.value)}
+                  disabled={!isConnected || !isCorrectNetwork}
+                />
+                <button
+                  onClick={handleRequestPayment}
+                  disabled={requestLoading || !isConnected || !isCorrectNetwork}
+                  className={`text-white font-semibold py-3 rounded-xl flex items-center justify-center gap-2 transition-all ${
+                    requestLoading || !isConnected || !isCorrectNetwork
+                      ? "bg-gray-400 cursor-not-allowed"
+                      : "bg-green-600 hover:bg-green-700"
+                  }`}
+                >
+                  <i className="fas fa-money-bill-wave"></i>
+                  {requestLoading ? "Sending..." : "Pay Owner Now"}
+                </button>
+              </div>
+            </div>
+
+            {/* Contract Balance */}
+            <div className="mt-6 bg-gradient-to-r from-orange-500 to-orange-600 rounded-2xl shadow-xl p-6 text-white animate-slideUp">
+              <div className="flex justify-between items-center">
+                <div>
+                  <p className="text-orange-100 text-sm">Contract Balance</p>
+                  <p className="text-3xl font-bold">{contractBalance} ETH</p>
+                </div>
+                <button
+                  onClick={handleRefresh}
+                  className="bg-white/20 hover:bg-white/30 p-3 rounded-full transition-colors"
+                  disabled={refreshing}
+                >
+                  <i
+                    className={`fas fa-sync-alt ${refreshing ? "fa-spin" : ""}`}
+                  ></i>
+                </button>
+              </div>
+              <div className="mt-4 grid grid-cols-3 gap-4 text-center">
+                <div className="bg-white/20 rounded-lg p-2">
+                  <p className="text-2xl font-bold">{totalExpenses}</p>
+                  <p className="text-xs text-orange-100">Total Expenses</p>
+                </div>
+                <div className="bg-white/20 rounded-lg p-2">
+                  <p className="text-2xl font-bold">
+                    {totalAmount.toFixed(2)}
+                  </p>
+                  <p className="text-xs text-orange-100">Total Amount</p>
+                </div>
+                <div className="bg-white/20 rounded-lg p-2">
+                  <p className="text-2xl font-bold">{pendingCount}</p>
+                  <p className="text-xs text-orange-100">Pending</p>
+                </div>
+              </div>
+            </div>
+
+            {/* Payment States + Minting + Requests - 3x2 animated grid */}
+            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4 mt-6 mb-6">
+              <button
+                onClick={() => setDetailView("pending")}
+                className="group bg-yellow-50 dark:bg-slate-700 border-2 border-yellow-200 dark:border-yellow-500/30 rounded-2xl p-5 text-center hover:shadow-xl hover:-translate-y-1 transition-all duration-300 animate-pop cursor-pointer"
+              >
+                <div className="w-12 h-12 mx-auto mb-2 bg-yellow-100 dark:bg-yellow-500/20 rounded-full flex items-center justify-center group-hover:scale-110 transition-transform">
+                  <i className="fas fa-clock text-yellow-600 dark:text-yellow-400 text-xl"></i>
+                </div>
+                <p className="text-yellow-600 dark:text-yellow-400 text-sm font-medium">
+                  ⏳ Pending
+                </p>
+                <p className="text-3xl font-bold text-yellow-700 dark:text-yellow-300">
+                  {summaryStats.pending}
+                </p>
+                <p className="text-xs text-yellow-600 dark:text-yellow-500 mt-1 group-hover:underline">
+                  View details →
+                </p>
+              </button>
+              <button
+                onClick={() => setDetailView("paid")}
+                className="group bg-green-50 dark:bg-slate-700 border-2 border-green-200 dark:border-green-500/30 rounded-2xl p-5 text-center hover:shadow-xl hover:-translate-y-1 transition-all duration-300 animate-pop cursor-pointer"
+                style={{ animationDelay: "80ms" }}
+              >
+                <div className="w-12 h-12 mx-auto mb-2 bg-green-100 dark:bg-green-500/20 rounded-full flex items-center justify-center group-hover:scale-110 transition-transform">
+                  <i className="fas fa-check-circle text-green-600 dark:text-green-400 text-xl"></i>
+                </div>
+                <p className="text-green-600 dark:text-green-400 text-sm font-medium">
+                  ✅ Paid
+                </p>
+                <p className="text-3xl font-bold text-green-700 dark:text-green-300">
+                  {summaryStats.paid}
+                </p>
+                <p className="text-xs text-green-600 dark:text-green-500 mt-1 group-hover:underline">
+                  View details →
+                </p>
+              </button>
+              <button
+                onClick={() => setDetailView("received")}
+                className="group bg-blue-50 dark:bg-slate-700 border-2 border-blue-200 dark:border-blue-500/30 rounded-2xl p-5 text-center hover:shadow-xl hover:-translate-y-1 transition-all duration-300 animate-pop cursor-pointer"
+                style={{ animationDelay: "160ms" }}
+              >
+                <div className="w-12 h-12 mx-auto mb-2 bg-blue-100 dark:bg-blue-500/20 rounded-full flex items-center justify-center group-hover:scale-110 transition-transform">
+                  <i className="fas fa-hand-holding-heart text-blue-600 dark:text-blue-400 text-xl"></i>
+                </div>
+                <p className="text-blue-600 dark:text-blue-400 text-sm font-medium">
+                  💰 Received
+                </p>
+                <p className="text-3xl font-bold text-blue-700 dark:text-blue-300">
+                  {summaryStats.received}
+                </p>
+                <p className="text-xs text-blue-600 dark:text-blue-500 mt-1 group-hover:underline">
+                  View details →
+                </p>
+              </button>
+              <button
+                onClick={() => setDetailView("paymentDue")}
+                className="group bg-purple-50 dark:bg-slate-700 border-2 border-purple-200 dark:border-purple-500/30 rounded-2xl p-5 text-center hover:shadow-xl hover:-translate-y-1 transition-all duration-300 animate-pop cursor-pointer"
+                style={{ animationDelay: "240ms" }}
+              >
+                <div className="w-12 h-12 mx-auto mb-2 bg-purple-100 dark:bg-purple-500/20 rounded-full flex items-center justify-center group-hover:scale-110 transition-transform">
+                  <i className="fas fa-hand-holding-usd text-purple-600 dark:text-purple-400 text-xl"></i>
+                </div>
+                <p className="text-purple-600 dark:text-purple-400 text-sm font-medium">
+                  💳 Payment Due
+                </p>
+                <p className="text-3xl font-bold text-purple-700 dark:text-purple-300">
+                  {summaryStats.paymentDue}
+                </p>
+                <p className="text-xs text-purple-600 dark:text-purple-500 mt-1 group-hover:underline">
+                  View details →
+                </p>
+              </button>
+
+              {/* Mint Expense NFT - opens mint page */}
+              <button
+                onClick={() => setDetailView("mint")}
+                className="group bg-purple-50 dark:bg-slate-700 border-2 border-purple-200 dark:border-purple-500/30 rounded-2xl p-5 text-center hover:shadow-xl hover:-translate-y-1 transition-all duration-300 animate-pop cursor-pointer"
+                style={{ animationDelay: "320ms" }}
+              >
+                <div className="w-12 h-12 mx-auto mb-2 bg-purple-100 dark:bg-purple-500/20 rounded-full flex items-center justify-center group-hover:scale-110 transition-transform">
+                  <i className="fas fa-cube text-purple-600 dark:text-purple-400 text-xl"></i>
+                </div>
+                <p className="text-purple-600 dark:text-purple-400 text-sm font-medium">
+                  Mint Expense NFT
+                </p>
+                <p className="text-3xl font-bold text-purple-700 dark:text-purple-300">
+                  {
+                    expenses.filter(
+                      (exp) =>
+                        exp.payerAddress?.toLowerCase() ===
+                          walletAddress?.toLowerCase() && exp.status === 1,
+                    ).length
+                  }
+                </p>
+                <p className="text-xs text-purple-600 dark:text-purple-500 mt-1 group-hover:underline">
+                  View details →
+                </p>
+              </button>
+
+              {/* Your Payment Requests - opens requests page */}
+              <button
+                onClick={() => setDetailView("requests")}
+                className="group bg-red-50 dark:bg-slate-700 border-2 border-red-200 dark:border-red-500/30 rounded-2xl p-5 text-center hover:shadow-xl hover:-translate-y-1 transition-all duration-300 animate-pop cursor-pointer"
+                style={{ animationDelay: "400ms" }}
+              >
+                <div className="w-12 h-12 mx-auto mb-2 bg-red-100 dark:bg-red-500/20 rounded-full flex items-center justify-center group-hover:scale-110 transition-transform">
+                  <i className="fas fa-bell text-red-600 dark:text-red-400 text-xl"></i>
+                </div>
+                <p className="text-red-600 dark:text-red-400 text-sm font-medium">
+                  Payment Requests
+                </p>
+                <p className="text-3xl font-bold text-red-700 dark:text-red-300">
+                  {pendingRequests.length}
+                </p>
+                <p className="text-xs text-red-600 dark:text-red-500 mt-1 group-hover:underline">
+                  View details →
+                </p>
+              </button>
+            </div>
 
         {/* Main Content - Two Columns */}
         <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
           {/* Left Column - Add Expense Form */}
-          <div className="bg-white rounded-2xl shadow-xl p-6">
-            <h2 className="text-xl font-bold text-slate-700 mb-4">
+          <div className="bg-white dark:bg-slate-800 dark:border dark:border-slate-700 rounded-2xl shadow-xl p-6">
+            <h2 className="text-xl font-bold text-slate-700 dark:text-slate-100 mb-4">
               <i className="fas fa-plus-circle text-green-600"></i> Add Expense
             </h2>
 
@@ -1450,21 +2126,21 @@ function ExpenseApp() {
               <input
                 type="text"
                 placeholder="Expense Name (e.g., Dinner, Movie, Groceries)"
-                className="w-full border rounded-lg p-3 focus:outline-none focus:ring-2 focus:ring-orange-500"
+                className="w-full border dark:border-slate-600 dark:bg-slate-700 dark:text-slate-100 rounded-lg p-3 focus:outline-none focus:ring-2 focus:ring-orange-500"
                 value={expenseName}
                 onChange={(e) => setExpenseName(e.target.value)}
                 disabled={!isConnected || !isCorrectNetwork}
               />
 
               {/* Payer */}
-              <div className="bg-orange-50 p-3 rounded-lg">
-                <label className="text-sm font-semibold text-orange-700">
+              <div className="bg-orange-50 dark:bg-slate-700 p-3 rounded-lg">
+                <label className="text-sm font-semibold text-orange-700 dark:text-orange-400">
                   Who Paid?
                 </label>
                 <input
                   type="text"
                   placeholder="Enter payer's name (e.g., John)"
-                  className="w-full border rounded-lg p-3 mt-1 focus:outline-none focus:ring-2 focus:ring-orange-500"
+                  className="w-full border dark:border-slate-600 dark:bg-slate-700 dark:text-slate-100 rounded-lg p-3 mt-1 focus:outline-none focus:ring-2 focus:ring-orange-500"
                   value={paidBy}
                   onChange={(e) => setPaidBy(e.target.value)}
                   disabled={!isConnected || !isCorrectNetwork}
@@ -1472,7 +2148,7 @@ function ExpenseApp() {
                 <input
                   type="text"
                   placeholder="Payer's Wallet Address (0x...)"
-                  className="w-full border rounded-lg p-2 mt-2 text-sm focus:outline-none focus:ring-2 focus:ring-orange-500"
+                  className="w-full border dark:border-slate-600 dark:bg-slate-700 dark:text-slate-100 rounded-lg p-2 mt-2 text-sm focus:outline-none focus:ring-2 focus:ring-orange-500"
                   value={payerAddress}
                   onChange={(e) => setPayerAddress(e.target.value)}
                   disabled={!isConnected || !isCorrectNetwork}
@@ -1480,8 +2156,8 @@ function ExpenseApp() {
               </div>
 
               {/* Participant Count Selector */}
-              <div className="bg-blue-50 p-3 rounded-lg">
-                <label className="text-sm font-semibold text-blue-700 block mb-2">
+              <div className="bg-blue-50 dark:bg-slate-700 p-3 rounded-lg">
+                <label className="text-sm font-semibold text-blue-700 dark:text-blue-400 block mb-2">
                   Number of Participants
                 </label>
                 <div className="flex gap-2 items-center">
@@ -1499,10 +2175,8 @@ function ExpenseApp() {
                           newParticipants.push({ name: "", address: "" });
                         }
                         setParticipants(newParticipants);
-                        setParticipantCount(count);
                       } else if (count < currentCount && count >= 1) {
                         setParticipants(participants.slice(0, count));
-                        setParticipantCount(count);
                       }
                     }}
                     className="flex-1"
@@ -1512,15 +2186,15 @@ function ExpenseApp() {
                     {participants.length}
                   </span>
                 </div>
-                <p className="text-xs text-gray-500 mt-1">
+                <p className="text-xs text-gray-500 dark:text-slate-400 mt-1">
                   Slide to adjust number of participants (minimum 1)
                 </p>
               </div>
 
               {/* Dynamic Participants */}
-              <div className="bg-blue-50 p-3 rounded-lg">
+              <div className="bg-blue-50 dark:bg-slate-700 p-3 rounded-lg">
                 <div className="flex justify-between items-center mb-2">
-                  <label className="text-sm font-semibold text-blue-700">
+                  <label className="text-sm font-semibold text-blue-700 dark:text-blue-400">
                     Participants Who Owe Money ({participants.length} people)
                   </label>
                   <div className="flex gap-2">
@@ -1541,14 +2215,14 @@ function ExpenseApp() {
                 {participants.map((participant, index) => (
                   <div
                     key={index}
-                    className="mt-2 p-2 bg-white rounded border border-blue-200"
+                    className="mt-2 p-2 bg-white dark:bg-slate-800 rounded border border-blue-200 dark:border-blue-500/30"
                   >
                     <div className="flex justify-between items-start">
                       <div className="flex-1">
                         <input
                           type="text"
                           placeholder={`Participant ${index + 1} name`}
-                          className="w-full border rounded-lg p-2 focus:outline-none focus:ring-2 focus:ring-blue-500"
+                          className="w-full border dark:border-slate-600 dark:bg-slate-700 dark:text-slate-100 rounded-lg p-2 focus:outline-none focus:ring-2 focus:ring-blue-500"
                           value={participant.name}
                           onChange={(e) =>
                             handleParticipantChange(
@@ -1562,7 +2236,7 @@ function ExpenseApp() {
                         <input
                           type="text"
                           placeholder="Wallet address"
-                          className="w-full border rounded-lg p-2 mt-1 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
+                          className="w-full border dark:border-slate-600 dark:bg-slate-700 dark:text-slate-100 rounded-lg p-2 mt-1 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
                           value={participant.address}
                           onChange={(e) =>
                             handleParticipantChange(
@@ -1594,7 +2268,7 @@ function ExpenseApp() {
               <input
                 type="text"
                 placeholder="Location of expense"
-                className="w-full border rounded-lg p-3 focus:outline-none focus:ring-2 focus:ring-orange-500"
+                className="w-full border dark:border-slate-600 dark:bg-slate-700 dark:text-slate-100 rounded-lg p-3 focus:outline-none focus:ring-2 focus:ring-orange-500"
                 value={location}
                 onChange={(e) => setLocation(e.target.value)}
                 disabled={!isConnected || !isCorrectNetwork}
@@ -1604,21 +2278,21 @@ function ExpenseApp() {
                 step="0.001"
                 min="0.001"
                 placeholder="Total Amount (ETH)"
-                className="w-full border rounded-lg p-3 focus:outline-none focus:ring-2 focus:ring-orange-500"
+                className="w-full border dark:border-slate-600 dark:bg-slate-700 dark:text-slate-100 rounded-lg p-3 focus:outline-none focus:ring-2 focus:ring-orange-500"
                 value={amount}
                 onChange={handleAmountChange}
                 disabled={!isConnected || !isCorrectNetwork}
               />
 
               {/* Split Preview */}
-              <div className="bg-green-50 p-3 rounded-lg">
-                <p className="font-semibold text-green-700">
+              <div className="bg-green-50 dark:bg-slate-700 p-3 rounded-lg">
+                <p className="font-semibold text-green-700 dark:text-green-400">
                   💰 Split Preview:
                 </p>
-                <p className="text-xl font-bold text-green-600">
+                <p className="text-xl font-bold text-green-600 dark:text-green-400">
                   {splitAmount} ETH per person
                 </p>
-                <p className="text-xs text-gray-500 mt-1">
+                <p className="text-xs text-gray-500 dark:text-slate-400 mt-1">
                   Total: {amount || "0"} ETH (split equally between payer +{" "}
                   {participants.length} participants = {participants.length + 1}{" "}
                   people total)
@@ -1627,7 +2301,7 @@ function ExpenseApp() {
 
               {/* Status Dropdown */}
               <select
-                className="w-full border rounded-lg p-3 focus:outline-none focus:ring-2 focus:ring-orange-500"
+                className="w-full border dark:border-slate-600 dark:bg-slate-700 dark:text-slate-100 rounded-lg p-3 focus:outline-none focus:ring-2 focus:ring-orange-500"
                 value={status}
                 onChange={handleStatusChange}
                 disabled={!isConnected || !isCorrectNetwork}
@@ -1640,13 +2314,13 @@ function ExpenseApp() {
 
               {/* Bad Debt Section */}
               {showBadDebt && (
-                <div className="bg-red-50 p-3 rounded-lg border-2 border-red-300 animate-fadeIn">
+                <div className="bg-red-50 dark:bg-slate-700 p-3 rounded-lg border-2 border-red-300 dark:border-red-500/30 animate-fadeIn">
                   <label className="text-sm font-semibold text-red-700 flex items-center gap-2">
                     <i className="fas fa-exclamation-triangle"></i> Mark as Bad
                     Debt
                   </label>
                   <select
-                    className="w-full border rounded-lg p-2 mt-2 focus:outline-none focus:ring-2 focus:ring-red-500"
+                    className="w-full border dark:border-slate-600 dark:bg-slate-700 dark:text-slate-100 rounded-lg p-2 mt-2 focus:outline-none focus:ring-2 focus:ring-red-500"
                     value={badDebtPerson}
                     onChange={(e) => setBadDebtPerson(e.target.value)}
                     disabled={!isConnected || !isCorrectNetwork}
@@ -1661,7 +2335,7 @@ function ExpenseApp() {
                   <input
                     type="text"
                     placeholder="Bad Debtor's Wallet Address"
-                    className="w-full border rounded-lg p-2 mt-2 focus:outline-none focus:ring-2 focus:ring-red-500"
+                    className="w-full border dark:border-slate-600 dark:bg-slate-700 dark:text-slate-100 rounded-lg p-2 mt-2 focus:outline-none focus:ring-2 focus:ring-red-500"
                     value={badDebtAddress}
                     onChange={(e) => setBadDebtAddress(e.target.value)}
                     disabled={!isConnected || !isCorrectNetwork}
@@ -1700,156 +2374,27 @@ function ExpenseApp() {
           </div>
 
           {/* Right Column - Stats and Expenses */}
-          <div className="space-y-6">
-            {/* Contract Balance */}
-            <div className="bg-gradient-to-r from-orange-500 to-orange-600 rounded-2xl shadow-xl p-6 text-white">
-              <div className="flex justify-between items-center">
-                <div>
-                  <p className="text-orange-100 text-sm">Contract Balance</p>
-                  <p className="text-3xl font-bold">{contractBalance} ETH</p>
-                </div>
-                <button
-                  onClick={handleRefresh}
-                  className="bg-white/20 hover:bg-white/30 p-3 rounded-full transition-colors"
-                  disabled={refreshing}
-                >
-                  <i
-                    className={`fas fa-sync-alt ${refreshing ? "fa-spin" : ""}`}
-                  ></i>
-                </button>
-              </div>
-              <div className="mt-4 grid grid-cols-3 gap-4 text-center">
-                <div className="bg-white/20 rounded-lg p-2">
-                  <p className="text-2xl font-bold">{totalExpenses}</p>
-                  <p className="text-xs text-orange-100">Total Expenses</p>
-                </div>
-                <div className="bg-white/20 rounded-lg p-2">
-                  <p className="text-2xl font-bold">{totalAmount.toFixed(2)}</p>
-                  <p className="text-xs text-orange-100">Total Amount</p>
-                </div>
-                <div className="bg-white/20 rounded-lg p-2">
-                  <p className="text-2xl font-bold">{pendingCount}</p>
-                  <p className="text-xs text-orange-100">Pending</p>
-                </div>
-              </div>
-            </div>
-
-            {/* Payment Due Section - Shows expenses where user owes money */}
-            {isConnected && isCorrectNetwork && summaryStats.paymentDue > 0 && (
-              <div className="bg-purple-50 border-2 border-purple-300 rounded-2xl p-4">
-                <h3 className="text-purple-700 font-bold flex items-center gap-2 mb-2">
-                  <i className="fas fa-hand-holding-usd"></i> Payment Due (
-                  {summaryStats.paymentDue})
-                </h3>
-                <p className="text-sm text-purple-600 mb-3">
-                  These are expenses where you need to pay your share
-                </p>
-                {expenses
-                  .filter((exp) => {
-                    const isParticipant = exp.participants?.some(
-                      (addr) =>
-                        addr.toLowerCase() === walletAddress?.toLowerCase(),
-                    );
-                    const isPayer =
-                      exp.payerAddress?.toLowerCase() ===
-                      walletAddress?.toLowerCase();
-                    return (
-                      (exp.status === 0 || exp.status === 3) &&
-                      isParticipant &&
-                      !isPayer
-                    );
-                  })
-                  .map((expense) => (
-                    <div
-                      key={expense.id}
-                      className="bg-white p-3 rounded-lg mb-2 flex justify-between items-center"
-                    >
-                      <div>
-                        <p className="font-semibold text-purple-700">
-                          {expense.expname}
-                        </p>
-                        <p className="text-sm text-gray-600">
-                          Owe: {expense.shareamount.toFixed(4)} ETH to{" "}
-                          {expense.paidby}
-                        </p>
-                      </div>
-                      <button
-                        onClick={() =>
-                          handleParticipantPay(expense.id, expense.shareamount)
-                        }
-                        disabled={loading}
-                        className="bg-green-600 hover:bg-green-700 text-white px-4 py-2 rounded-lg text-sm disabled:opacity-50 flex items-center gap-2"
-                      >
-                        <i className="fas fa-money-bill-wave"></i> Pay Now
-                      </button>
-                    </div>
-                  ))}
-              </div>
-            )}
-
-            {/* Bad Debtors Warning */}
-            {badDebtors.length > 0 && (
-              <div className="bg-red-50 border-2 border-red-300 rounded-2xl p-4">
-                <h3 className="text-red-700 font-bold flex items-center gap-2 mb-2">
-                  <i className="fas fa-exclamation-triangle"></i> Bad Debtors
-                  Detected
-                </h3>
-                {badDebtors.map((debtor, idx) => (
-                  <div
-                    key={idx}
-                    className="flex justify-between items-center bg-white p-2 rounded mt-1"
-                  >
-                    <div>
-                      <span className="font-semibold text-red-700">
-                        {debtor.name}
-                      </span>
-                      <span className="text-gray-500 text-sm ml-2">
-                        ({formatAddress(debtor.address)})
-                      </span>
-                    </div>
-                    <div className="flex items-center gap-2">
-                      <span className="text-red-600 font-bold">
-                        {debtor.amount} ETH
-                      </span>
-                      {/* ✅ FIX: Mark debtor as paid - removes from bad debtors list */}
-                      <button
-                        onClick={() =>
-                          markDebtorAsPaid(
-                            debtor.expenseId || 0,
-                            debtor.address,
-                          )
-                        }
-                        disabled={loading || !isConnected}
-                        className="bg-green-500 hover:bg-green-600 text-white px-2 py-1 rounded text-xs disabled:opacity-50"
-                      >
-                        Mark Paid
-                      </button>
-                    </div>
-                  </div>
-                ))}
-              </div>
-            )}
-
+          <div className="flex flex-col gap-6 h-full">
             {/* Expenses List */}
-            <div className="bg-white rounded-2xl shadow-xl p-6">
+            <div className="bg-white dark:bg-slate-800 dark:border dark:border-slate-700 rounded-2xl shadow-xl p-6 flex-1 flex flex-col">
               <div className="flex justify-between items-center mb-4">
-                <h2 className="text-xl font-bold text-slate-700">
+                <h2 className="text-xl font-bold text-slate-700 dark:text-slate-100">
                   <i className="fas fa-list text-blue-600"></i> Expenses
                 </h2>
                 {refreshing && (
-                  <span className="text-sm text-gray-500">
+                  <span className="text-sm text-gray-500 dark:text-slate-400">
                     <i className="fas fa-spinner fa-spin"></i> Refreshing...
                   </span>
                 )}
               </div>
 
               {!dataLoaded ? (
-                <div className="text-center py-8 text-gray-500">
+                <div className="text-center py-8 text-gray-500 dark:text-slate-400">
                   <i className="fas fa-spinner fa-spin text-3xl mb-2"></i>
                   <p>Loading expenses...</p>
                 </div>
               ) : expenses.length === 0 ? (
-                <div className="text-center py-8 text-gray-500">
+                <div className="text-center py-8 text-gray-500 dark:text-slate-400">
                   <i className="fas fa-receipt text-4xl mb-3 text-gray-300"></i>
                   <p>No expenses yet. Add your first expense!</p>
                 </div>
@@ -1858,30 +2403,30 @@ function ExpenseApp() {
                   {expenses.map((expense) => (
                     <div
                       key={expense.id}
-                      className="border rounded-xl p-4 hover:shadow-md transition-shadow"
+                      className="border dark:border-slate-600 rounded-xl p-4 hover:shadow-md transition-shadow"
                     >
                       <div className="flex justify-between items-start">
                         <div className="flex-1">
-                          <h3 className="font-bold text-slate-800">
+                          <h3 className="font-bold text-slate-800 dark:text-slate-100">
                             {expense.expname}
                           </h3>
-                          <p className="text-sm text-gray-500">
+                          <p className="text-sm text-gray-500 dark:text-slate-400">
                             Paid by: {expense.paidby} (
                             {formatAddress(expense.payerAddress)})
                           </p>
-                          <p className="text-sm text-gray-500">
+                          <p className="text-sm text-gray-500 dark:text-slate-400">
                             Location: {expense.paddress}
                           </p>
                         </div>
                         <span
                           className={`px-3 py-1 rounded-full text-xs font-semibold ${
                             expense.status === 0
-                              ? "bg-yellow-100 text-yellow-700"
+                              ? "bg-yellow-100 text-yellow-700 dark:bg-yellow-500/20 dark:text-yellow-300"
                               : expense.status === 1
-                                ? "bg-green-100 text-green-700"
+                                ? "bg-green-100 text-green-700 dark:bg-green-500/20 dark:text-green-300"
                                 : expense.status === 2
-                                  ? "bg-red-100 text-red-700"
-                                  : "bg-orange-100 text-orange-700"
+                                  ? "bg-red-100 text-red-700 dark:bg-red-500/20 dark:text-red-300"
+                                  : "bg-orange-100 text-orange-700 dark:bg-orange-500/20 dark:text-orange-300"
                           }`}
                         >
                           {expense.statusText}
@@ -1890,10 +2435,10 @@ function ExpenseApp() {
 
                       <div className="mt-3 flex justify-between items-center">
                         <div>
-                          <span className="text-lg font-bold text-slate-800">
+                          <span className="text-lg font-bold text-slate-800 dark:text-slate-100">
                             {expense.amt.toFixed(4)} ETH
                           </span>
-                          <span className="text-sm text-gray-500 ml-2">
+                          <span className="text-sm text-gray-500 dark:text-slate-400 ml-2">
                             ({expense.participantCount} participants,{" "}
                             {expense.shareAmount} ETH each)
                           </span>
@@ -1902,8 +2447,8 @@ function ExpenseApp() {
 
                       {/* Participants List */}
                       {expense.participants.length > 0 && (
-                        <div className="mt-3 border-t pt-3">
-                          <p className="text-xs font-semibold text-gray-500 mb-1">
+                        <div className="mt-3 border-t dark:border-slate-600 pt-3">
+                          <p className="text-xs font-semibold text-gray-500 dark:text-slate-400 mb-1">
                             PARTICIPANTS:
                           </p>
                           <div className="space-y-1">
@@ -1915,23 +2460,23 @@ function ExpenseApp() {
                               return (
                                 <div
                                   key={idx}
-                                  className="flex justify-between items-center text-sm bg-gray-50 p-1.5 rounded"
+                                  className="flex justify-between items-center text-sm bg-gray-50 dark:bg-slate-700 p-1.5 rounded"
                                 >
                                   <div>
-                                    <span className="font-medium">
+                                    <span className="font-medium dark:text-slate-200">
                                       {expense.participantNames[idx] ||
                                         `Participant ${idx + 1}`}
                                     </span>
-                                    <span className="text-gray-400 ml-2 text-xs">
+                                    <span className="text-gray-400 dark:text-slate-500 ml-2 text-xs">
                                       {formatAddress(addr)}
                                     </span>
                                     {isUser && (
-                                      <span className="ml-2 bg-blue-100 text-blue-600 text-xs px-1.5 py-0.5 rounded">
+                                      <span className="ml-2 bg-blue-100 text-blue-600 dark:bg-blue-500/20 dark:text-blue-300 text-xs px-1.5 py-0.5 rounded">
                                         You
                                       </span>
                                     )}
                                     {isPaid && (
-                                      <span className="ml-2 bg-green-100 text-green-600 text-xs px-1.5 py-0.5 rounded">
+                                      <span className="ml-2 bg-green-100 text-green-600 dark:bg-green-500/20 dark:text-green-300 text-xs px-1.5 py-0.5 rounded">
                                         ✅ Paid
                                       </span>
                                     )}
@@ -1984,274 +2529,41 @@ function ExpenseApp() {
                   ))}
                 </div>
               )}
-            </div>
-          </div>
-        </div>
 
-        {/* request payment from the debtors seprately if they want to repay payment to the acctual owner */}
-        <div className="mt-6 bg-white rounded-2xl shadow-xl p-6">
-          <h2 className="text-xl font-bold text-slate-700 mb-4">
-            <i className="fas fa-hand-holding-usd text-yellow-600"></i> Repay
-            Payment to Actual Owner
-          </h2>
-          <p className="text-sm text-gray-500 mb-4">
-            Use this section if you are a debtor and want to create a separate
-            request to repay the actual owner directly.
-          </p>
-          <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
-            <input
-              type="text"
-              placeholder="Actual Owner's Address (0x...)"
-              className="border rounded-lg p-3 focus:outline-none focus:ring-2 focus:ring-yellow-500"
-              value={requestRecipient}
-              onChange={(e) => setRequestRecipient(e.target.value)}
-              disabled={!isConnected || !isCorrectNetwork}
-            />
-            <input
-              type="number"
-              step="0.001"
-              min="0.001"
-              placeholder="Amount (ETH)"
-              className="border rounded-lg p-3 focus:outline-none focus:ring-2 focus:ring-yellow-500"
-              value={requestAmount}
-              onChange={(e) => setRequestAmount(e.target.value)}
-              disabled={!isConnected || !isCorrectNetwork}
-            />
-            <input
-              type="text"
-              placeholder="Reason (e.g. Repaying dinner debt)"
-              className="border rounded-lg p-3 focus:outline-none focus:ring-2 focus:ring-yellow-500"
-              value={requestReason}
-              onChange={(e) => setRequestReason(e.target.value)}
-              disabled={!isConnected || !isCorrectNetwork}
-            />
-            <button
-              onClick={handleRequestPayment}
-              disabled={requestLoading || !isConnected || !isCorrectNetwork}
-              className={`text-white font-semibold py-3 rounded-xl flex items-center justify-center gap-2 transition-all ${
-                requestLoading || !isConnected || !isCorrectNetwork
-                  ? "bg-gray-400 cursor-not-allowed"
-                  : "bg-green-600 hover:bg-green-700"
-              }`}
-            >
-              <i className="fas fa-money-bill-wave"></i>
-              {requestLoading ? "Sending..." : "Pay Owner Now"}
-            </button>
-          </div>
-        </div>
-
-        {/* Pending Payment Requests */}
-        <div className="mt-6 bg-white rounded-2xl shadow-xl p-6">
-          <div className="flex justify-between items-center mb-4">
-            <h2 className="text-xl font-bold text-slate-700">
-              <i className="fas fa-bell text-red-500"></i> Your Pending Payment
-              Requests
-            </h2>
-            <button
-              onClick={() => setShowRequests(!showRequests)}
-              className="text-sm text-blue-600 hover:text-blue-800"
-            >
-              {showRequests ? "Hide" : "Show All Requests"}
-            </button>
-          </div>
-
-          {pendingRequests.length === 0 ? (
-            <p className="text-gray-500 text-center py-4">
-              No pending payment requests for you.
-            </p>
-          ) : (
-            <div className="space-y-3">
-              {pendingRequests.map((req, idx) => (
-                <div
-                  key={idx}
-                  className="border rounded-xl p-4 flex justify-between items-center bg-red-50"
+              {/* Reset All Expenses */}
+              <div className="mt-auto pt-4 border-t dark:border-slate-600">
+                <button
+                  onClick={resetExpenses}
+                  disabled={loading || !isConnected || !isCorrectNetwork}
+                  className={`w-full bg-red-600 hover:bg-red-700 text-white font-bold py-3 px-6 rounded-xl transition-all flex items-center justify-center gap-3 ${
+                    loading || !isConnected || !isCorrectNetwork
+                      ? "bg-gray-400 cursor-not-allowed"
+                      : ""
+                  }`}
                 >
-                  <div>
-                    <p className="font-semibold text-slate-800">
-                      From: {formatAddress(req.from)}
-                    </p>
-                    <p className="text-sm text-gray-500">
-                      Reason: {req.reason}
-                    </p>
-                    <p className="text-sm text-gray-400">{req.timestamp}</p>
-                  </div>
-                  <div className="text-right flex flex-col items-end gap-2">
-                    <span className="text-lg font-bold text-red-600">
-                      {req.amount} ETH
-                    </span>
-                    <button
-                      onClick={() => payRequest(req.id, req.amount)}
-                      disabled={loading || !isConnected}
-                      className="bg-green-600 hover:bg-green-700 text-white px-4 py-2 rounded-lg text-sm disabled:opacity-50 flex items-center gap-2"
-                    >
-                      <i className="fas fa-money-bill-wave"></i> Pay Now
-                    </button>
-                  </div>
-                </div>
-              ))}
-            </div>
-          )}
-
-          {/* All Requests History */}
-          {showRequests && (
-            <div className="mt-6 border-t pt-4">
-              <h3 className="font-bold text-slate-700 mb-3">
-                All Request History
-              </h3>
-              {allRequests.length === 0 ? (
-                <p className="text-gray-500 text-center py-4">
-                  No requests found.
+                  <i className="fas fa-trash-alt"></i>
+                  {loading ? "Resetting..." : "⚠️ RESET ALL EXPENSES ⚠️"}
+                </button>
+                <p className="text-sm text-red-500 mt-2 text-center">
+                  Warning: This will permanently delete all expense data from the
+                  contract.
                 </p>
-              ) : (
-                <div className="space-y-2 max-h-[400px] overflow-y-auto">
-                  {allRequests
-                    .filter(
-                      (req) =>
-                        req.from.toLowerCase() ===
-                          walletAddress?.toLowerCase() ||
-                        req.to.toLowerCase() === walletAddress?.toLowerCase(),
-                    )
-                    .map((req, idx) => (
-                      <div
-                        key={idx}
-                        className={`border rounded-lg p-3 flex justify-between items-center ${req.isPaid ? "bg-gray-50 opacity-75" : "bg-white"}`}
-                      >
-                        <div>
-                          <p className="text-sm font-medium">
-                            {req.from.toLowerCase() ===
-                            walletAddress?.toLowerCase()
-                              ? "You → "
-                              : ""}
-                            {formatAddress(req.from)} → {formatAddress(req.to)}
-                            {req.to.toLowerCase() ===
-                            walletAddress?.toLowerCase()
-                              ? " ← You"
-                              : ""}
-                          </p>
-                          <p className="text-xs text-gray-500">
-                            {req.reason} | {req.timestamp}
-                          </p>
-                        </div>
-                        <div className="text-right">
-                          <p className="font-bold text-sm">{req.amount} ETH</p>
-                          <p
-                            className={`text-xs font-semibold ${req.isPaid ? "text-green-600" : "text-yellow-600"}`}
-                          >
-                            {req.isPaid ? "✅ Paid" : "⏳ Pending"}
-                          </p>
-                          <p className="text-xs text-gray-400 mt-1">
-                            {req.from.toLowerCase() ===
-                            walletAddress?.toLowerCase()
-                              ? "You owe"
-                              : "Owes you"}
-                          </p>
-                        </div>
-                      </div>
-                    ))}
-                </div>
-              )}
-            </div>
-          )}
-        </div>
-
-        {/* NFT Minting Section */}
-        <div className="mt-6 bg-white rounded-2xl shadow-xl p-6">
-          <h2 className="text-xl font-bold text-slate-700 mb-4">
-            <i className="fas fa-cube text-purple-600"></i> Mint Expense NFT
-          </h2>
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-            <div>
-              <label className="text-sm font-semibold text-gray-600 block mb-1">
-                Select Expense
-              </label>
-              <select
-                className="w-full border rounded-lg p-3 focus:outline-none focus:ring-2 focus:ring-purple-500"
-                value={selectedExpenseForNFT}
-                onChange={(e) => setSelectedExpenseForNFT(e.target.value)}
-                disabled={!isConnected || !isCorrectNetwork}
-              >
-                <option value="">Choose an expense...</option>
-                {expenses
-                  .filter((exp) => {
-                    // Only show expenses where connected wallet is the payer AND expense is fully PAID
-                    const isPayer =
-                      exp.payerAddress?.toLowerCase() ===
-                      walletAddress?.toLowerCase();
-                    return isPayer && exp.status === 1;
-                  })
-                  .map((exp) => (
-                    <option key={exp.id} value={exp.id}>
-                      {exp.expname} - {exp.amt.toFixed(4)} ETH ✅ Paid
-                    </option>
-                  ))}
-              </select>
-            </div>
-            <div>
-              <label className="text-sm font-semibold text-gray-600 block mb-1">
-                Upload Custom Image (Optional)
-              </label>
-              <input
-                type="file"
-                accept="image/*"
-                onChange={(e) => {
-                  setNftImageFile(e.target.files[0]);
-                  if (e.target.files[0]) {
-                    setNftImage(URL.createObjectURL(e.target.files[0]));
-                  }
-                }}
-                className="w-full border rounded-lg p-2 text-sm"
-                disabled={!isConnected || !isCorrectNetwork}
-              />
+              </div>
             </div>
           </div>
-
-          {nftImage && (
-            <div className="mt-4 flex justify-center">
-              <img
-                src={nftImage}
-                alt="NFT Preview"
-                className="w-48 h-48 object-cover rounded-xl border-2 border-purple-300 shadow-md"
-              />
-            </div>
-          )}
-
-          <button
-            onClick={mintExpenseNFT}
-            disabled={
-              mintingNFT ||
-              !isConnected ||
-              !isCorrectNetwork ||
-              !selectedExpenseForNFT
-            }
-            className={`mt-4 w-full text-white font-semibold py-3 rounded-xl flex items-center justify-center gap-2 transition-all ${
-              mintingNFT ||
-              !isConnected ||
-              !isCorrectNetwork ||
-              !selectedExpenseForNFT
-                ? "bg-gray-400 cursor-not-allowed"
-                : "bg-purple-600 hover:bg-purple-700"
-            }`}
-          >
-            <i className="fas fa-magic"></i>
-            {mintingNFT
-              ? uploading
-                ? "Uploading to IPFS..."
-                : "Minting..."
-              : "Mint Expense NFT"}
-          </button>
         </div>
 
         {/* NFT Gallery */}
         {userNFTs.length > 0 && (
-          <div className="mt-6 bg-white rounded-2xl shadow-xl p-6">
-            <h2 className="text-xl font-bold text-slate-700 mb-4">
+          <div className="mt-6 bg-white dark:bg-slate-800 dark:border dark:border-slate-700 rounded-2xl shadow-xl p-6">
+            <h2 className="text-xl font-bold text-slate-700 dark:text-slate-100 mb-4">
               <i className="fas fa-images text-indigo-600"></i> Your NFT Gallery
             </h2>
             <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
               {userNFTs.map((nft, idx) => (
                 <div
                   key={idx}
-                  className="border rounded-xl overflow-hidden hover:shadow-lg transition-shadow"
+                  className="border dark:border-slate-600 rounded-xl overflow-hidden hover:shadow-lg transition-shadow"
                 >
                   <img
                     src={nft.image}
@@ -2259,10 +2571,10 @@ function ExpenseApp() {
                     className="w-full h-40 object-cover"
                   />
                   <div className="p-3">
-                    <p className="font-bold text-sm text-slate-800 truncate">
+                    <p className="font-bold text-sm text-slate-800 dark:text-slate-100 truncate">
                       {nft.metadata?.name || "Expense NFT"}
                     </p>
-                    <p className="text-xs text-gray-500">
+                    <p className="text-xs text-gray-500 dark:text-slate-400">
                       Token ID: {nft.tokenId}
                     </p>
                   </div>
@@ -2271,25 +2583,8 @@ function ExpenseApp() {
             </div>
           </div>
         )}
-
-        <div className="mt-8 mb-12 text-center">
-          <button
-            onClick={resetExpenses}
-            disabled={loading || !isConnected || !isCorrectNetwork}
-            className={`bg-red-600 hover:bg-red-700 text-white font-bold py-4 px-12 rounded-xl text-lg transition-all flex items-center justify-center gap-3 mx-auto ${
-              loading || !isConnected || !isCorrectNetwork
-                ? "bg-gray-400 cursor-not-allowed"
-                : ""
-            }`}
-          >
-            <i className="fas fa-trash-alt"></i>
-            {loading ? "Resetting..." : "⚠️ RESET ALL EXPENSES ⚠️"}
-          </button>
-          <p className="text-sm text-red-500 mt-2">
-            Warning: This will permanently delete all expense data from the
-            contract.
-          </p>
-        </div>
+          </>
+        )}
       </div>
     </div>
   );
