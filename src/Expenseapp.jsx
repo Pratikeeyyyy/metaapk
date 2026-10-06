@@ -1,4 +1,5 @@
 import { useState, useEffect, useCallback, useMemo } from "react";
+import { Link } from "react-router-dom";
 import { ethers } from "ethers";
 import { contractABI } from "./abi";
 import { nftABI } from "./NftABI";
@@ -1341,11 +1342,19 @@ function ExpenseApp() {
         <div className="bg-white dark:bg-slate-800 dark:border dark:border-slate-700 dark:text-slate-100 rounded-2xl shadow-xl p-8 mb-6 animate-slideUp">
           <div className="text-center mb-8">
             <h1 className="text-3xl font-bold text-slate-800 dark:text-slate-100">
-              💰 Expense Sharing DApp
+              💰 Share Crypto
             </h1>
             <p className="text-slate-500 dark:text-slate-400 text-sm mt-2">
-              Split expenses with friends on Sepolia
+              Split ETH with friends on Sepolia (1 ETH = 10^18 wei)
             </p>
+            <div className="mt-3">
+              <Link
+                to="/app"
+                className="inline-flex items-center gap-2 text-sm font-semibold text-orange-600 hover:text-orange-700 dark:text-orange-400"
+              >
+                <i className="fas fa-arrow-left"></i> Back to sharing options
+              </Link>
+            </div>
             {isConnected && isCorrectNetwork && (
               <span className="inline-block mt-2 px-3 py-1 bg-green-100 text-green-700 text-xs rounded-full">
                 ✅ Connected to Sepolia

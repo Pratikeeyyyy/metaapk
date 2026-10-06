@@ -4,24 +4,34 @@ import {
   Routes,
   Route,
   Navigate,
+  Link,
 } from "react-router-dom";
 import { AuthProvider, useAuth } from "./context/AuthContext";
 import Login from "./pages/Login";
 import Register from "./pages/Register";
 import Landing from "./pages/Landing";
+import ShareHub from "./pages/ShareHub";
+import ShareRs from "./pages/ShareRs";
 import ExpenseApp from "./Expenseapp";
 import PrivateRoute from "./guard/AuthGuard";
 
-const AppContent = ({ darkMode, setDarkMode }) => {
+const AppShell = ({ darkMode, setDarkMode, children }) => {
   const { user, logout } = useAuth();
 
   return (
     <div>
       {user && (
-        <div className="bg-gray-800 text-white p-4 flex justify-between items-center">
+        <div className="bg-gray-800 text-white p-4 flex justify-between items-center flex-wrap gap-3">
           <div>
-            <span className="font-semibold">👋 Welcome, {user.name}!</span>
-            <span className="ml-4 text-sm text-gray-400">({user.email})</span>
+            <Link
+              to="/app"
+              className="font-semibold hover:underline flex items-center gap-2"
+            >
+              💸 SplitEasy
+              <span className="text-sm font-normal text-gray-400">
+                ({user.name})
+              </span>
+            </Link>
           </div>
           <div className="flex items-center gap-3">
             <button
@@ -42,10 +52,28 @@ const AppContent = ({ darkMode, setDarkMode }) => {
           </div>
         </div>
       )}
-      <ExpenseApp />
+      {children}
     </div>
   );
 };
+
+const AppContent = (props) => (
+  <AppShell {...props}>
+    <ShareHub />
+  </AppShell>
+);
+
+const ShareRsContent = (props) => (
+  <AppShell {...props}>
+    <ShareRs />
+  </AppShell>
+);
+
+const ShareCryptoContent = (props) => (
+  <AppShell {...props}>
+    <ExpenseApp />
+  </AppShell>
+);
 
 function App() {
   const [darkMode, setDarkMode] = useState(() => {
@@ -77,6 +105,25 @@ function App() {
             element={
               <PrivateRoute>
                 <AppContent darkMode={darkMode} setDarkMode={setDarkMode} />
+              </PrivateRoute>
+            }
+          />
+          <Route
+            path="/app/share-rs"
+            element={
+              <PrivateRoute>
+                <ShareRsContent darkMode={darkMode} setDarkMode={setDarkMode} />
+              </PrivateRoute>
+            }
+          />
+          <Route
+            path="/app/share-crypto"
+            element={
+              <PrivateRoute>
+                <ShareCryptoContent
+                  darkMode={darkMode}
+                  setDarkMode={setDarkMode}
+                />
               </PrivateRoute>
             }
           />

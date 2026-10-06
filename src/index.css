@@ -1,3 +1,129 @@
 @tailwind base;
 @tailwind components;
 @tailwind utilities;
+
+@layer base {
+  html {
+    scroll-behavior: smooth;
+  }
+
+  body {
+    @apply antialiased;
+  }
+
+  /* Keyboard focus is always visible, even where components reset outlines */
+  :focus-visible {
+    @apply outline-none ring-2 ring-emerald-500 ring-offset-2 ring-offset-white dark:ring-offset-slate-900;
+  }
+
+  /* Slim scrollbars so the record lists do not look heavy */
+  * {
+    scrollbar-width: thin;
+    scrollbar-color: rgb(148 163 184 / 0.6) transparent;
+  }
+
+  *::-webkit-scrollbar {
+    width: 8px;
+    height: 8px;
+  }
+
+  *::-webkit-scrollbar-track {
+    background: transparent;
+  }
+
+  *::-webkit-scrollbar-thumb {
+    @apply rounded-full bg-slate-400/60;
+  }
+
+  *::-webkit-scrollbar-thumb:hover {
+    @apply bg-slate-500/80;
+  }
+}
+
+@layer components {
+  /* Ambient colour wash behind auth + chooser screens */
+  .aurora-bg {
+    @apply relative isolate overflow-hidden bg-slate-950;
+  }
+
+  .aurora-blob {
+    @apply pointer-events-none absolute rounded-full blur-3xl animate-blob;
+    will-change: transform;
+  }
+
+  /* Gradient text for headings */
+  .text-gradient {
+    @apply bg-clip-text text-transparent bg-gradient-to-r animate-gradientX;
+    background-size: 200% auto;
+  }
+
+  /* Frosted panel used on dark surfaces */
+  .glass {
+    @apply bg-white/70 backdrop-blur-xl border border-white/60 dark:bg-slate-900/60 dark:border-white/10;
+  }
+
+  /* Card with a sweeping highlight on hover */
+  .sheen-card {
+    @apply relative overflow-hidden;
+  }
+
+  .sheen-card::after {
+    content: "";
+    @apply pointer-events-none absolute inset-y-0 -left-1/3 w-1/3 bg-gradient-to-r from-transparent via-white/40 to-transparent opacity-0;
+  }
+
+  .sheen-card:hover::after,
+  .sheen-card:focus-within::after {
+    @apply opacity-100 animate-sheen;
+  }
+
+  /* Primary action button */
+  .btn {
+    @apply inline-flex items-center justify-center gap-2 rounded-xl px-4 py-3 font-semibold text-white transition-all duration-200 disabled:cursor-not-allowed disabled:opacity-50;
+  }
+
+  .btn-primary {
+    @apply btn bg-emerald-600 hover:bg-emerald-700 active:scale-[0.98];
+  }
+
+  .btn-orange {
+    @apply btn bg-orange-600 hover:bg-orange-700 active:scale-[0.98];
+  }
+
+  .btn-ghost {
+    @apply btn bg-slate-100 text-slate-700 hover:bg-slate-200 dark:bg-slate-800 dark:text-slate-200 dark:hover:bg-slate-700;
+  }
+
+  .btn-danger {
+    @apply btn bg-red-600 hover:bg-red-700 active:scale-[0.98];
+  }
+
+  /* Form controls */
+  .field {
+    @apply w-full rounded-xl border border-slate-300 bg-white px-4 py-3 text-slate-900 placeholder-slate-400 transition focus:border-emerald-500 focus:outline-none focus:ring-2 focus:ring-emerald-500/40 dark:border-slate-600 dark:bg-slate-800 dark:text-slate-100 dark:placeholder-slate-500;
+  }
+
+  .label {
+    @apply mb-1.5 block text-sm font-semibold text-slate-700 dark:text-slate-200;
+  }
+
+  /* Soft dashed grid backdrop */
+  .grid-lines {
+    background-image:
+      linear-gradient(to right, rgb(148 163 184 / 0.12) 1px, transparent 1px),
+      linear-gradient(to bottom, rgb(148 163 184 / 0.12) 1px, transparent 1px);
+    background-size: 56px 56px;
+  }
+}
+
+/* Respect the OS setting: cut decorative motion, keep state changes legible */
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.001ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.001ms !important;
+    scroll-behavior: auto !important;
+  }
+}
